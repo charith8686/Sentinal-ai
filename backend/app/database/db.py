@@ -3,10 +3,11 @@ import json
 import os
 from typing import List, Dict, Any, Optional
 
-DB_FILE = os.getenv("SENTINEL_DB_PATH", "sentinel_ai.db")
+from app.config import settings
 
 def get_connection():
-    conn = sqlite3.connect(DB_FILE)
+    db_file = settings.database_path or os.getenv("SENTINEL_DB_PATH", "sentinel_ai.db")
+    conn = sqlite3.connect(db_file)
     conn.row_factory = sqlite3.Row
     return conn
 

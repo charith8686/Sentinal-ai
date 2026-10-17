@@ -15,14 +15,17 @@ from app.engine.hash_chain import verify_chain, GENESIS_HASH
 
 @pytest.fixture(autouse=True)
 def setup_test_db():
-    # Use a separate test database
     settings.database_path = "test_sentinel.db"
-    if os.path.exists("test_sentinel.db"):
-        try:
-            os.remove("test_sentinel.db")
-        except PermissionError:
-            pass
     init_db()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM policies;")
+    cursor.execute("DELETE FROM rules;")
+    cursor.execute("DELETE FROM events;")
+    cursor.execute("DELETE FROM alerts;")
+    cursor.execute("DELETE FROM audit_ledger;")
+    conn.commit()
+    conn.close()
     yield
 
 def test_clarity_check_ambiguous_policy():
