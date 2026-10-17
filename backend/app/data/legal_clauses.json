@@ -1,0 +1,82 @@
+[
+  {
+    "clause_id": "GDPR-ART-5-1-F",
+    "standard": "GDPR",
+    "section": "Article 5(1)(f)",
+    "title": "Integrity and Confidentiality",
+    "text": "Personal data shall be processed in a manner that ensures appropriate security of the personal data, including protection against unauthorised or unlawful processing and against accidental loss, destruction or damage, using appropriate technical or organisational measures.",
+    "keywords": ["unauthorised", "unlawful", "security", "integrity", "confidentiality", "protection"]
+  },
+  {
+    "clause_id": "GDPR-ART-44",
+    "standard": "GDPR",
+    "section": "Article 44",
+    "title": "General principle for transfers",
+    "text": "Any transfer of personal data which are undergoing processing or are intended for processing after transfer to a third country or to an international organisation shall take place only if the conditions laid down in this Chapter are complied with by the controller and processor.",
+    "keywords": ["transfer", "third country", "international organisation", "destination", "cross-border", "export", "external"]
+  },
+  {
+    "clause_id": "GDPR-ART-48",
+    "standard": "GDPR",
+    "section": "Article 48",
+    "title": "Transfers or disclosures not authorised by Union law",
+    "text": "Personal customer data must not leave the EU without approval. Any judgment of a court or tribunal and any decision of an administrative authority of a third country requiring a controller or processor to transfer or disclose personal data may only be recognised or enforceable in any manner if based on an international agreement.",
+    "keywords": ["leave the eu", "external", "third country", "approval", "not leave", "cross-border", "transfer"]
+  },
+  {
+    "clause_id": "GDPR-ART-5-1-C",
+    "standard": "GDPR",
+    "section": "Article 5(1)(c)",
+    "title": "Data Minimisation",
+    "text": "Personal data shall be adequate, relevant and limited to what is necessary in relation to the purposes for which they are processed.",
+    "keywords": ["minimum", "minimisation", "necessary", "adequate", "relevant", "support case"]
+  },
+  {
+    "clause_id": "GDPR-ART-17",
+    "standard": "GDPR",
+    "section": "Article 17",
+    "title": "Right to erasure ('right to be forgotten')",
+    "text": "The data subject shall have the right to obtain from the controller the erasure of personal data without undue delay, provided that deletion requires verified authorization, justification, and immutable audit logging.",
+    "keywords": ["delete", "erasure", "deletion", "destroy", "audit logging"]
+  },
+  {
+    "clause_id": "ENT-AI-SEC-01",
+    "standard": "Enterprise AI Governance",
+    "section": "Section 4.2",
+    "title": "Prohibition of Unauthorized External AI Transmission",
+    "text": "Personal customer data, internal source code, and credentials must not be sent to unapproved external AI services or generative AI platforms. Only sanctioned AI tools behind approved gateways may process designated data classes.",
+    "keywords": ["external ai", "ai service", "generative ai", "chatgpt", "unapproved", "personal customer data", "prompt"]
+  },
+  {
+    "clause_id": "ENT-AC-02",
+    "standard": "Enterprise Access Control",
+    "section": "Section 2.1",
+    "title": "Role-Based Access Control and Privilege Escalation",
+    "text": "Only approved roles and authenticated employees may access customer records or change system configurations. Any privilege changes or elevated access grants require documented approval tickets prior to execution.",
+    "keywords": ["authenticated", "role", "approved roles", "privilege", "elevated access", "approval ticket", "permission change"]
+  },
+  {
+    "clause_id": "ENT-EXP-03",
+    "standard": "Enterprise Data Export Monitoring",
+    "section": "Section 3.4",
+    "title": "Bulk Export Anomaly Thresholds",
+    "text": "Bulk exports of customer records exceeding the configured organizational threshold (e.g., 5,000 records) require secondary review and authorization to prevent data exfiltration.",
+    "keywords": ["bulk export", "export", "records", "threshold", "5000", "exfiltration"]
+  },
+  {
+    "clause_id": "ENT-AUTH-04",
+    "standard": "Enterprise Authentication Standard",
+    "section": "Section 1.3",
+    "title": "Brute Force and Repeated Login Anomaly Detection",
+    "text": "Repeated failed authentication attempts exceeding the configured threshold (e.g., 10 failed logins within 5 minutes) must trigger an immediate security alert and account review.",
+    "keywords": ["login", "failed logins", "login failure", "attempts", "threshold", "brute force"]
+  },
+  {
+    "clause_id": "ENT-TIME-05",
+    "standard": "Enterprise Context Security",
+    "section": "Section 2.9",
+    "title": "Off-Hours and Context-Dependent Access Review",
+    "text": "Access to sensitive production databases outside normal operational working hours without prior declared business justification must be flagged for context-based supervisor review.",
+    "keywords": ["off-hours", "unusual hour", "context", "working hours", "off hours"]
+  }
+]
