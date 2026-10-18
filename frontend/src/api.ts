@@ -1,144 +1,171 @@
 import {
-  Policy, Rule, EventItem, AlertItem, ProofCardItem,
+  CompanyProfile, Policy, Rule, EventItem, AlertItem, ProofCardItem,
   AuditVerification, SystemHealth, DashboardOverview
 } from './types';
 
 const API_BASE = '/api';
 
+function getAuthHeader(): Record<string, string> {
+  const token = localStorage.getItem('sentinel_token');
+  return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
+async function request(endpoint: string, options: RequestInit = {}): Promise<any> {
+  const headers = {
+    'Content-Type': 'application/json',
+    ...getAuthHeader(),
+    ...(options.headers || {})
+  };
+
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    ...options,
+    headers
+  });
+
+  if (res.status === 401) {
+    // Only redirect if not already on login/auth calls
+    if (!endpoint.startsWith('/auth/')) {
+      localStorage.removeItem('sentinel_token');
+      localStorage.removeItem('sentinel_company');
+      window.dispatchEvent(new Event('sentinel-logout'));
+    }
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.detail || `Request failed with status ${res.status}`);
+  }
+  return data;
+}
+
 export const api = {
+  // Auth
+  register: async (payload: { name: string; email: string; password: string; industry?: string }): Promise<CompanyProfile & { token: string }> => {
+    return request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  login: async (payload: { email: string; password: string }): Promise<CompanyProfile & { token: string }> => {
+    return request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  logout: async (): Promise<any> => {
+    try {
+      await request('/auth/logout', { method: 'POST' });
+    } finally {
+      localStorage.removeItem('sentinel_token');
+      localStorage.removeItem('sentinel_company');
+    }
+  },
+  getMe: async (): Promise<CompanyProfile> => {
+    return request('/auth/me');
+  },
+
   // System Health & Settings
   getHealth: async (): Promise<SystemHealth> => {
-    const res = await fetch(`${API_BASE}/health`);
-    return res.json();
+    return request('/health');
   },
-  toggleDegradedMode: async (online: boolean): Promise<any> => {
-    const res = await fetch(`${API_BASE}/settings/degraded-mode`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ online })
-    });
-    return res.json();
-  },
-  switchReviewer: async (reviewer_name: string): Promise<any> => {
-    const res = await fetch(`${API_BASE}/settings/reviewer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reviewer_name })
-    });
-    return res.json();
-  },
-  getIndustry: async (): Promise<any> => {
-    const res = await fetch(`${API_BASE}/settings/industry`);
-    return res.json();
-  },
-  setIndustry: async (industry: string): Promise<any> => {
-    const res = await fetch(`${API_BASE}/settings/industry`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ industry })
-    });
-    return res.json();
+  getAiStatus: async (): Promise<any> => {
+    return request('/settings/ai-status');
   },
 
   // Overview
   getOverview: async (): Promise<DashboardOverview> => {
-    const res = await fetch(`${API_BASE}/stats/overview`);
-    return res.json();
+    return request('/stats/overview');
   },
 
   // Policies
   getPolicies: async (): Promise<Policy[]> => {
-    const res = await fetch(`${API_BASE}/policies`);
-    return res.json();
+    return request('/policies');
   },
-  createPolicy: async (data: { title: string; industry: string; text: string }): Promise<any> => {
-    const res = await fetch(`${API_BASE}/policies`, {
+  createPolicy: async (data: { title: string; industry?: string; text: string }): Promise<any> => {
+    return request('/policies', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
+  },
+  deletePolicy: async (policyId: string): Promise<any> => {
+    return request(`/policies/${policyId}`, { method: 'DELETE' });
   },
 
   // Rules
-  getRules: async (status?: string): Promise<Rule[]> => {
-    const url = status ? `${API_BASE}/rules?status=${status}` : `${API_BASE}/rules`;
-    const res = await fetch(url);
-    return res.json();
+  getRules: async (): Promise<Rule[]> => {
+    return request('/rules');
   },
-  approveRule: async (ruleId: string, decision: 'APPROVE' | 'REJECT', comment?: string, reviewer?: string): Promise<any> => {
-    const res = await fetch(`${API_BASE}/rules/${ruleId}/approval`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decision, comment, reviewer })
-    });
-    return res.json();
-  },
-  backtestRule: async (ruleId: string): Promise<any> => {
-    const res = await fetch(`${API_BASE}/rules/${ruleId}/backtest`, {
-      method: 'POST'
-    });
-    return res.json();
+  deleteRule: async (ruleId: string): Promise<any> => {
+    return request(`/rules/${ruleId}`, { method: 'DELETE' });
   },
 
   // Events
   getEvents: async (): Promise<EventItem[]> => {
-    const res = await fetch(`${API_BASE}/events`);
-    return res.json();
+    return request('/events');
   },
   simulateEvent: async (eventData: Partial<EventItem> & { raw_prompt?: string }): Promise<any> => {
-    const res = await fetch(`${API_BASE}/events/simulate`, {
+    return request('/events/simulate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(eventData)
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || 'Simulation failed');
-    }
-    return res.json();
   },
-  importCsv: async (): Promise<any> => {
-    const res = await fetch(`${API_BASE}/events/import-csv`, { method: 'POST' });
-    return res.json();
+  importCsv: async (file: File): Promise<any> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = localStorage.getItem('sentinel_token');
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${API_BASE}/events/import-csv`, {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    if (res.status === 401) {
+      localStorage.removeItem('sentinel_token');
+      localStorage.removeItem('sentinel_company');
+      window.dispatchEvent(new Event('sentinel-logout'));
+    }
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.detail || `Upload failed with status ${res.status}`);
+    }
+    return data;
   },
 
   // Alerts
   getAlerts: async (severity?: string, status?: string): Promise<AlertItem[]> => {
     const params = new URLSearchParams();
-    if (severity) params.append('severity', severity);
-    if (status) params.append('status', status);
-    const res = await fetch(`${API_BASE}/alerts?${params.toString()}`);
-    return res.json();
+    if (severity && severity !== 'ALL') params.append('severity', severity);
+    if (status && status !== 'ALL') params.append('status', status);
+    const qs = params.toString();
+    return request(`/alerts${qs ? `?${qs}` : ''}`);
   },
   updateAlert: async (alertId: string, data: { status?: string; assigned_to?: string; new_note?: string }): Promise<any> => {
-    const res = await fetch(`${API_BASE}/alerts/${alertId}`, {
+    return request(`/alerts/${alertId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return res.json();
   },
 
   // Audit
   getLedger: async (): Promise<ProofCardItem[]> => {
-    const res = await fetch(`${API_BASE}/audit/ledger`);
-    return res.json();
+    return request('/audit/ledger');
   },
   verifyAudit: async (): Promise<AuditVerification> => {
-    const res = await fetch(`${API_BASE}/audit/verify`, { method: 'POST' });
-    return res.json();
+    return request('/audit/verify', { method: 'POST' });
   },
   simulateTamper: async (proofId?: string): Promise<any> => {
-    const res = await fetch(`${API_BASE}/audit/tamper-demo`, {
+    return request('/audit/tamper-demo', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ proof_id: proofId })
     });
-    return res.json();
   },
   restoreLedger: async (): Promise<any> => {
-    const res = await fetch(`${API_BASE}/audit/restore`, { method: 'POST' });
-    return res.json();
+    return request('/audit/restore', { method: 'POST' });
   }
 };

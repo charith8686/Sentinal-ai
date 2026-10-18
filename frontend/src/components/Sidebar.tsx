@@ -4,58 +4,89 @@ import {
   FileText,
   ShieldCheck,
   Activity,
-  AlertTriangle,
   Link2,
   Sliders,
-  Cpu,
-  Server
+  LogOut,
+  Building2
 } from 'lucide-react';
+import { CompanyProfile } from '../types';
 
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
-  pendingReviewsCount: number;
   openAlertsCount: number;
+  company: CompanyProfile | null;
+  onLogout: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   setActiveTab,
-  pendingReviewsCount,
-  openAlertsCount
+  openAlertsCount,
+  company,
+  onLogout
 }) => {
   const menuItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'policies', label: 'Policy Center', icon: FileText },
-    { id: 'rules', label: 'Rule Registry', icon: ShieldCheck, badge: pendingReviewsCount ? `${pendingReviewsCount}` : null, badgeType: 'warning' },
-    { id: 'backtest', label: 'Rule Testing', icon: Activity },
-    { id: 'events', label: 'Event Monitoring', icon: Server },
-    { id: 'alerts', label: 'Alerts & Cases', icon: AlertTriangle, badge: openAlertsCount ? `${openAlertsCount}` : null, badgeType: 'danger' },
+    { id: 'policies', label: 'Policies', icon: FileText },
+    { id: 'rules', label: 'Rules', icon: ShieldCheck },
+    {
+      id: 'events-alerts',
+      label: 'Events & Alerts',
+      icon: Activity,
+      badge: openAlertsCount > 0 ? `${openAlertsCount}` : null,
+      badgeType: 'danger'
+    },
     { id: 'audit', label: 'Audit Ledger', icon: Link2 },
-    { id: 'settings', label: 'Settings & Architecture', icon: Sliders }
+    { id: 'settings', label: 'Settings', icon: Sliders }
   ];
 
   return (
     <aside className="sidebar">
+      {/* Brand Header */}
       <div className="sidebar-header">
         <div style={{
           width: 32,
           height: 32,
-          backgroundColor: '#253745',
+          backgroundColor: '#11212D',
           borderRadius: 6,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          border: '1px solid #4A5C6A'
+          border: '1px solid #253745'
         }}>
-          <ShieldCheck size={20} color="#38BDF8" />
+          <ShieldCheck size={18} color="#CCD0CF" />
         </div>
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 700, letterSpacing: '0.04em', color: '#FFFFFF' }}>SENTINEL AI</h2>
-          <div style={{ fontSize: 10, color: '#9BA8AB', letterSpacing: '0.05em' }}>POLICY → RULE → PROOF</div>
+          <h2 style={{ fontSize: 14, fontWeight: 700, letterSpacing: '0.04em', color: '#FFFFFF', margin: 0 }}>
+            SENTINEL AI
+          </h2>
+          <div style={{ fontSize: 10, color: '#9BA8AB', letterSpacing: '0.03em' }}>
+            Policy → Rule → Proof
+          </div>
         </div>
       </div>
 
+      {/* Authenticated Company Workspace Badge */}
+      {company && (
+        <div style={{
+          padding: '12px 16px',
+          borderBottom: '1px solid rgba(74, 92, 106, 0.25)',
+          backgroundColor: 'rgba(17, 33, 45, 0.6)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#9BA8AB', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <Building2 size={12} color="#CCD0CF" /> Workspace
+          </div>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#FFFFFF', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {company.name}
+          </div>
+          <div style={{ fontSize: 11, color: '#9BA8AB' }}>
+            {company.industry}
+          </div>
+        </div>
+      )}
+
+      {/* Navigation List - Six Main Sections */}
       <ul className="nav-list">
         {menuItems.map((item) => {
           const Icon = item.icon;
@@ -66,10 +97,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               className={`nav-item ${isActive ? 'active' : ''}`}
               onClick={() => setActiveTab(item.id)}
             >
-              <Icon size={17} color={isActive ? '#38BDF8' : '#9BA8AB'} />
-              <span style={{ flex: 1, fontSize: 13 }}>{item.label}</span>
+              <Icon size={16} color={isActive ? '#FFFFFF' : '#9BA8AB'} />
+              <span style={{ flex: 1 }}>{item.label}</span>
               {item.badge && (
-                <span className={`badge ${item.badgeType === 'danger' ? 'badge-danger' : 'badge-warning'}`} style={{ fontSize: 10, padding: '1px 6px' }}>
+                <span className="badge badge-danger" style={{ fontSize: 10, padding: '1px 6px' }}>
                   {item.badge}
                 </span>
               )}
@@ -78,21 +109,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
         })}
       </ul>
 
-      {/* Governing Principles footer box */}
-      <div style={{
-        padding: '16px',
-        borderTop: '1px solid #4A5C6A',
-        backgroundColor: '#0B1A24',
-        fontSize: 11,
-        color: '#9BA8AB'
-      }}>
-        <div style={{ fontWeight: 600, color: '#CCD0CF', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Cpu size={14} color="#38BDF8" /> GOVERNING AXIOMS
+      {/* Logout & Footer */}
+      <div style={{ padding: '12px 14px', borderTop: '1px solid rgba(74, 92, 106, 0.3)' }}>
+        <button
+          onClick={onLogout}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '8px 12px',
+            backgroundColor: 'transparent',
+            border: '1px solid rgba(74, 92, 106, 0.4)',
+            borderRadius: 6,
+            color: '#CCD0CF',
+            fontSize: 12,
+            cursor: 'pointer',
+            transition: 'background-color 0.15s ease'
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#11212D')}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+        >
+          <LogOut size={14} color="#9BA8AB" />
+          <span>Exit Workspace</span>
+        </button>
+      </div>
+
+      <div className="sidebar-footer">
+        <div style={{ fontWeight: 600, color: '#CCD0CF', marginBottom: 4, letterSpacing: '0.04em' }}>
+          HOSTED PLATFORM
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div><strong style={{ color: '#10B981' }}>1. RULES DECIDE</strong> (Deterministic)</div>
-          <div><strong style={{ color: '#38BDF8' }}>2. AI EXPLAINS</strong> (Cited Evidence)</div>
-          <div><strong style={{ color: '#F59E0B' }}>3. HUMANS APPROVE</strong> (Dual Control)</div>
+        <div style={{ fontSize: 11, color: '#9BA8AB' }}>
+          IBM LinuxONE Enterprise
         </div>
       </div>
     </aside>

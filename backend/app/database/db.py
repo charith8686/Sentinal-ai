@@ -1,8 +1,6 @@
 import sqlite3
 import json
 import os
-from typing import List, Dict, Any, Optional
-
 from app.config import settings
 
 def get_connection():
@@ -15,10 +13,34 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # 1. Policies table
+    # 1. Companies table (Multi-company login and isolation)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS companies (
+        company_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        industry TEXT NOT NULL DEFAULT 'Banking',
+        created_at TEXT NOT NULL
+    );
+    """)
+
+    # 2. Company Sessions table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS company_sessions (
+        token TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        FOREIGN KEY (company_id) REFERENCES companies(company_id)
+    );
+    """)
+
+    # 3. Policies table (company isolated)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS policies (
         policy_id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
         title TEXT NOT NULL,
         industry TEXT NOT NULL,
         text TEXT NOT NULL,
@@ -27,14 +49,16 @@ def init_db():
         clauses_json TEXT NOT NULL,
         missing_info_reason TEXT,
         clarification_questions_json TEXT,
+        is_sample INTEGER DEFAULT 0,
         created_at TEXT NOT NULL
     );
     """)
 
-    # 2. Rules table
+    # 4. Rules table (company isolated)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS rules (
         rule_id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
         rule_name TEXT NOT NULL,
         source_policy_id TEXT NOT NULL,
         source_clause_id TEXT NOT NULL,
@@ -50,15 +74,19 @@ def init_db():
         approval_time TEXT,
         review_comment TEXT,
         requires_revalidation INTEGER DEFAULT 0,
+        is_sample INTEGER DEFAULT 0,
+        validation_status TEXT DEFAULT 'VALIDATED',
+        validation_message TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     );
     """)
 
-    # 3. Events table
+    # 5. Events table (company isolated)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS events (
         event_id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
         timestamp TEXT NOT NULL,
         received_time TEXT NOT NULL,
         user_id TEXT NOT NULL,
@@ -74,14 +102,16 @@ def init_db():
         dlp_findings_json TEXT NOT NULL,
         expected_classification TEXT,
         expected_action TEXT,
-        expected_reason TEXT
+        expected_reason TEXT,
+        is_sample INTEGER DEFAULT 0
     );
     """)
 
-    # 4. Alerts table
+    # 6. Alerts table (company isolated)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS alerts (
         alert_id TEXT PRIMARY KEY,
+        company_id TEXT NOT NULL,
         event_id TEXT NOT NULL,
         severity TEXT NOT NULL,
         detection_time TEXT NOT NULL,
@@ -99,10 +129,11 @@ def init_db():
     );
     """)
 
-    # 5. Proof Cards / Audit Ledger table
+    # 7. Proof Cards / Audit Ledger table (company isolated)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS audit_ledger (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id TEXT NOT NULL,
         proof_id TEXT UNIQUE NOT NULL,
         event_id TEXT NOT NULL,
         event_timestamp TEXT NOT NULL,
@@ -122,13 +153,22 @@ def init_db():
     );
     """)
 
-    # 6. Global System State
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS system_state (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    );
-    """)
+    # Migration helper for any existing tables missing company_id
+    for table in ["policies", "rules", "events", "alerts", "audit_ledger"]:
+        try:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN company_id TEXT DEFAULT 'DEFAULT_COMPANY'")
+        except sqlite3.OperationalError:
+            pass
+
+    try:
+        cursor.execute("ALTER TABLE rules ADD COLUMN validation_status TEXT DEFAULT 'VALIDATED'")
+    except sqlite3.OperationalError:
+        pass
+
+    try:
+        cursor.execute("ALTER TABLE rules ADD COLUMN validation_message TEXT")
+    except sqlite3.OperationalError:
+        pass
 
     conn.commit()
     conn.close()

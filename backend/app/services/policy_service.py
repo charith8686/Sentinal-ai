@@ -5,6 +5,8 @@ import datetime
 from typing import Dict, Any, List, Optional
 from app.database.db import get_connection
 from app.config import settings
+from app.services.ai_service import get_ai_provider, _local_rule_extraction_fallback
+from app.services.rule_validator import validate_and_test_rule
 
 CLAUSES_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "legal_clauses.json")
 
@@ -16,8 +18,7 @@ def load_legal_clauses() -> List[Dict[str, Any]]:
 
 def retrieve_grounded_clauses(policy_text: str) -> List[Dict[str, Any]]:
     """
-    RAG-style grounded clause retrieval over authentic legal standards.
-    Extracts matching clauses with exact citations.
+    Retrieves grounded clauses from reference corpus.
     """
     clauses = load_legal_clauses()
     text_lower = policy_text.lower()
@@ -28,8 +29,6 @@ def retrieve_grounded_clauses(policy_text: str) -> List[Dict[str, Any]]:
         for kw in clause.get("keywords", []):
             if kw.lower() in text_lower:
                 score += 1
-        
-        # Exact standard match bonus
         if clause.get("standard", "").lower() in text_lower:
             score += 2
 
@@ -38,18 +37,11 @@ def retrieve_grounded_clauses(policy_text: str) -> List[Dict[str, Any]]:
             clause_copy["relevance_score"] = min(1.0, round(score / max(len(clause.get("keywords", [])), 1) * 1.5, 2))
             scored.append(clause_copy)
 
-    # Sort descending by relevance
     scored.sort(key=lambda x: x["relevance_score"], reverse=True)
     return scored[:3]
 
 def check_policy_clarity(policy_text: str) -> Dict[str, Any]:
-    """
-    Clarity Check: Detects vague or ambiguous policies.
-    Guarantees no hallucinated rule is activated when requirements are ambiguous.
-    """
     text_lower = policy_text.lower().strip()
-    
-    # Ambiguous markers
     vague_phrases = [
         "handle data appropriately",
         "act properly",
@@ -65,19 +57,18 @@ def check_policy_clarity(policy_text: str) -> Dict[str, Any]:
         if phrase in text_lower and len(text_lower) < 80:
             return {
                 "is_ambiguous": True,
-                "reason": "Policy contains purely subjective guidance ('" + phrase + "') without concrete technical predicates.",
+                "reason": f"Policy contains purely subjective language ('{phrase}') without measurable security conditions.",
                 "clarification_questions": [
-                    "What specific classification of data (e.g. PII, PCI, PHI) does this rule govern?",
-                    "What technical actions (e.g. EXPORT, AI_PROMPT, READ_RECORD) trigger this policy?",
-                    "Which destination endpoints or systems are considered authorized vs unauthorized?"
+                    "What specific classification of data (PII, Credentials, Financial Records) does this policy govern?",
+                    "What technical actions (e.g. Outbound AI prompt, Bulk data export, Role modification) trigger enforcement?",
+                    "Which destinations are authorized vs unauthorized for this record type?"
                 ]
             }
 
-    # Short or non-specific text check
     if len(text_lower.split()) < 4:
         return {
             "is_ambiguous": True,
-            "reason": "Policy statement is too brief to formulate deterministic boolean criteria.",
+            "reason": "Policy statement is too brief to formulate deterministic logic.",
             "clarification_questions": [
                 "Please define the exact actor roles and access prerequisites.",
                 "Please specify required approval documentation or ticketing procedures."
@@ -86,102 +77,10 @@ def check_policy_clarity(policy_text: str) -> Dict[str, Any]:
 
     return {"is_ambiguous": False}
 
-def generate_proposed_rule(policy_id: str, policy_title: str, policy_text: str, grounded_clause: Dict[str, Any]) -> Dict[str, Any]:
+async def create_policy_service(title: str, industry: str, text: str, company_id: str) -> Dict[str, Any]:
     """
-    Proposes a structured IF-THEN rule grounded in the cited clause.
-    """
-    text_lower = policy_text.lower()
-    rule_id = f"R-{uuid.uuid4().hex[:6].upper()}"
-
-    # Template-based deterministic translation
-    if "ai" in text_lower or "external" in text_lower or "chatgpt" in text_lower:
-        conditions = [
-            {"field": "sensitive_data", "operator": "==", "value": True},
-            {"field": "is_unapproved_destination", "operator": "==", "value": True}
-        ]
-        classification = "PRIVACY_VIOLATION"
-        recommended_action = "BLOCK_OR_ALERT"
-        risk_level = "HIGH"
-        rule_name = "Restrict Sensitive Data Transmission to External AI"
-        explanation = (
-            f"Evaluates outbound AI data flow against {grounded_clause.get('clause_id')}. "
-            "Triggers when sensitive enterprise data is targeted to unapproved external AI endpoints."
-        )
-    elif "bulk" in text_lower or "5000" in text_lower or "export" in text_lower:
-        conditions = [
-            {"field": "sensitive_data", "operator": "==", "value": True},
-            {"field": "is_bulk", "operator": "==", "value": True}
-        ]
-        classification = "SUSPICIOUS"
-        recommended_action = "INVESTIGATE"
-        risk_level = "MEDIUM"
-        rule_name = "Bulk Customer Record Export Inspection"
-        explanation = (
-            f"Grounds against {grounded_clause.get('clause_id')}. Flags high-volume record queries "
-            "exceeding standard operational thresholds for manual review."
-        )
-    elif "unusual hour" in text_lower or "off-hours" in text_lower:
-        conditions = [
-            {"field": "sensitive_data", "operator": "==", "value": True},
-            {"field": "is_off_hours", "operator": "==", "value": True}
-        ]
-        classification = "SUSPICIOUS"
-        recommended_action = "HUMAN_REVIEW"
-        risk_level = "MEDIUM"
-        rule_name = "Off-Hours Sensitive Record Access Review"
-        explanation = (
-            f"Under {grounded_clause.get('clause_id')}, flags customer data access during non-business "
-            "windows without attached business ticket."
-        )
-    elif "ticket" in text_lower or "permission" in text_lower or "privilege" in text_lower:
-        conditions = [
-            {"field": "authorized", "operator": "==", "value": False}
-        ]
-        classification = "PRIVACY_VIOLATION"
-        recommended_action = "BLOCK_OR_ALERT"
-        risk_level = "HIGH"
-        rule_name = "Enforce Documented Ticket for Privilege Changes"
-        explanation = (
-            f"Strictly enforces {grounded_clause.get('clause_id')}. Access grants and modifications "
-            "lacking verified authorization are deterministically blocked."
-        )
-    else:
-        # Default baseline privacy rule
-        conditions = [
-            {"field": "sensitive_data", "operator": "==", "value": True},
-            {"field": "authorized", "operator": "==", "value": False}
-        ]
-        classification = "PRIVACY_VIOLATION"
-        recommended_action = "BLOCK_OR_ALERT"
-        risk_level = "HIGH"
-        rule_name = f"Enforce {policy_title[:30]}"
-        explanation = f"Grounded in {grounded_clause.get('clause_id')}: blocks unauthorized access to sensitive records."
-
-    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    return {
-        "rule_id": rule_id,
-        "rule_name": rule_name,
-        "source_policy_id": policy_id,
-        "source_clause_id": grounded_clause.get("clause_id", "GENERAL-POLICY"),
-        "supporting_clause_text": grounded_clause.get("text", policy_text),
-        "conditions": conditions,
-        "classification": classification,
-        "recommended_action": recommended_action,
-        "risk_level": risk_level,
-        "explanation": explanation,
-        "version": "1.0",
-        "status": "PENDING_APPROVAL",  # Must never be ACTIVE immediately!
-        "approver": None,
-        "approval_time": None,
-        "review_comment": None,
-        "requires_revalidation": False,
-        "created_at": now,
-        "updated_at": now
-    }
-
-def create_policy_service(title: str, industry: str, text: str) -> Dict[str, Any]:
-    """
-    Submits a policy, checks clarity, retrieves grounded clauses, and creates proposed rule if clear.
+    Submits a policy for the authenticated company, invokes real AI analysis,
+    validates the proposed rule, and automatically activates it if valid.
     """
     clarity = check_policy_clarity(text)
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -191,9 +90,20 @@ def create_policy_service(title: str, industry: str, text: str) -> Dict[str, Any
     cursor = conn.cursor()
 
     if clarity["is_ambiguous"]:
-        # Ambiguous policy: route to human review
+        # Ambiguous policy: Save as NEEDS_REVIEW, do not activate a rule
+        cursor.execute("""
+            INSERT INTO policies (policy_id, company_id, title, industry, text, version, status, clauses_json, missing_info_reason, clarification_questions_json, is_sample, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+        """, (
+            policy_id, company_id, title, industry, text, "1.0", "NEEDS_REVIEW",
+            "[]", clarity["reason"], json.dumps(clarity["clarification_questions"]), now
+        ))
+        conn.commit()
+        conn.close()
+
         policy_record = {
             "policy_id": policy_id,
+            "company_id": company_id,
             "title": title,
             "industry": industry,
             "text": text,
@@ -204,102 +114,175 @@ def create_policy_service(title: str, industry: str, text: str) -> Dict[str, Any
             "clarification_questions": clarity["clarification_questions"],
             "created_at": now
         }
+        return {"policy": policy_record, "proposed_rule": None}
+
+    # Clear policy: Retrieve grounded reference citations
+    retrieved_clauses = retrieve_grounded_clauses(text)
+    if not retrieved_clauses:
+        retrieved_clauses = [{
+            "clause_id": "General Enterprise Policy",
+            "standard": "Internal Corporate Standards",
+            "section": "Section 1",
+            "title": "Corporate Compliance Requirement",
+            "text": text,
+            "relevance_score": 1.0
+        }]
+
+    # Invoke configured AI provider
+    ai_provider = get_ai_provider()
+    try:
+        ai_result = await ai_provider.analyze_policy(title, text, industry, retrieved_clauses)
+    except Exception as e:
+        # Fallback to local grounded rule extractor if external AI model call fails or is unconfigured
+        ai_result = _local_rule_extraction_fallback(title, text, retrieved_clauses, provider_note=f"[Fallback: {str(e)}]")
+
+    if ai_result.get("is_ambiguous"):
+        # Model flagged ambiguity
         cursor.execute("""
-            INSERT INTO policies (policy_id, title, industry, text, version, status, clauses_json, missing_info_reason, clarification_questions_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO policies (policy_id, company_id, title, industry, text, version, status, clauses_json, missing_info_reason, clarification_questions_json, is_sample, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
         """, (
-            policy_id, title, industry, text, "1.0", "NEEDS_REVIEW",
-            "[]", clarity["reason"], json.dumps(clarity["clarification_questions"]), now
+            policy_id, company_id, title, industry, text, "1.0", "NEEDS_REVIEW",
+            json.dumps(retrieved_clauses), ai_result.get("ambiguity_reason", "Policy ambiguous"),
+            json.dumps(ai_result.get("clarification_questions", [])), now
         ))
         conn.commit()
         conn.close()
-        return {"policy": policy_record, "proposed_rule": None}
+        return {
+            "policy": {
+                "policy_id": policy_id,
+                "company_id": company_id,
+                "title": title,
+                "industry": industry,
+                "text": text,
+                "version": "1.0",
+                "status": "NEEDS_REVIEW",
+                "clauses": retrieved_clauses,
+                "missing_info_reason": ai_result.get("ambiguity_reason"),
+                "clarification_questions": ai_result.get("clarification_questions", []),
+                "created_at": now
+            },
+            "proposed_rule": None
+        }
 
-    # Clear policy: ground clauses
-    retrieved_clauses = retrieve_grounded_clauses(text)
-    if not retrieved_clauses:
-        # Fallback to general clause
-        retrieved_clauses = [{
-            "clause_id": "ENT-GEN-01",
-            "standard": "Enterprise Privacy Standard",
-            "section": "Section 1.1",
-            "title": "General Data Protection Requirement",
-            "text": text,
-            "relevance_score": 0.8
-        }]
+    # Build rule draft
+    rule_id = f"R-{uuid.uuid4().hex[:6].upper()}"
+    rule_name = ai_result.get("rule_name") or f"Rule for {title[:40]}"
+    source_clause_id = ai_result.get("cited_clause_id") or retrieved_clauses[0]["clause_id"]
+    supporting_clause_text = ai_result.get("supporting_clause_text") or retrieved_clauses[0]["text"]
+    conditions = ai_result.get("conditions") or [{"field": "sensitive_data", "operator": "==", "value": True}]
+    classification = ai_result.get("classification") or "PRIVACY_VIOLATION"
+    recommended_action = ai_result.get("recommended_action") or "BLOCK_OR_ALERT"
+    risk_level = ai_result.get("risk_level") or "HIGH"
+    explanation = ai_result.get("explanation") or f"Automatically generated rule grounded in {source_clause_id}."
 
-    top_clause = retrieved_clauses[0]
-    proposed_rule = generate_proposed_rule(policy_id, title, text, top_clause)
+    rule_draft = {
+        "rule_id": rule_id,
+        "company_id": company_id,
+        "rule_name": rule_name,
+        "source_policy_id": policy_id,
+        "source_clause_id": source_clause_id,
+        "supporting_clause_text": supporting_clause_text,
+        "conditions": conditions,
+        "classification": classification,
+        "recommended_action": recommended_action,
+        "risk_level": risk_level,
+        "explanation": explanation,
+        "version": "1.0",
+        "created_at": now,
+        "updated_at": now
+    }
+
+    # AUTOMATIC VALIDATION & TESTING PIPELINE
+    validation = validate_and_test_rule(rule_draft, company_id)
+    rule_status = validation["status"] # "ACTIVE" if passed, "REJECTED" if failed
+    validation_status = "VALIDATED" if validation["passed"] else "REJECTED"
+    validation_message = validation["message"]
 
     # Persist policy
     cursor.execute("""
-        INSERT INTO policies (policy_id, title, industry, text, version, status, clauses_json, missing_info_reason, clarification_questions_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO policies (policy_id, company_id, title, industry, text, version, status, clauses_json, missing_info_reason, clarification_questions_json, is_sample, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
     """, (
-        policy_id, title, industry, text, "1.0", "ACTIVE",
+        policy_id, company_id, title, industry, text, "1.0", "ACTIVE",
         json.dumps(retrieved_clauses), None, "[]", now
     ))
 
-    # Persist proposed rule as PENDING_APPROVAL
+    # Persist rule with automated activation status
     cursor.execute("""
-        INSERT INTO rules (rule_id, rule_name, source_policy_id, source_clause_id, supporting_clause_text, conditions_json, classification, recommended_action, risk_level, explanation, version, status, approver, approval_time, review_comment, requires_revalidation, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO rules (
+            rule_id, company_id, rule_name, source_policy_id, source_clause_id,
+            supporting_clause_text, conditions_json, classification, recommended_action,
+            risk_level, explanation, version, status, approver, approval_time,
+            review_comment, requires_revalidation, is_sample, validation_status, validation_message, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        proposed_rule["rule_id"],
-        proposed_rule["rule_name"],
-        proposed_rule["source_policy_id"],
-        proposed_rule["source_clause_id"],
-        proposed_rule["supporting_clause_text"],
-        json.dumps(proposed_rule["conditions"]),
-        proposed_rule["classification"],
-        proposed_rule["recommended_action"],
-        proposed_rule["risk_level"],
-        proposed_rule["explanation"],
-        proposed_rule["version"],
-        proposed_rule["status"],
-        proposed_rule["approver"],
-        proposed_rule["approval_time"],
-        proposed_rule["review_comment"],
-        0,
-        now,
-        now
+        rule_id, company_id, rule_name, policy_id, source_clause_id,
+        supporting_clause_text, json.dumps(conditions), classification, recommended_action,
+        risk_level, explanation, "1.0", rule_status, "Automated Verification", now,
+        validation_message, 0, 0, validation_status, validation_message, now, now
     ))
 
     conn.commit()
     conn.close()
 
-    policy_record = {
-        "policy_id": policy_id,
-        "title": title,
-        "industry": industry,
-        "text": text,
-        "version": "1.0",
-        "status": "ACTIVE",
-        "clauses": retrieved_clauses,
-        "missing_info_reason": None,
-        "clarification_questions": [],
-        "created_at": now
-    }
-    return {"policy": policy_record, "proposed_rule": proposed_rule}
+    rule_draft["status"] = rule_status
+    rule_draft["approver"] = "Automated Verification"
+    rule_draft["approval_time"] = now
+    rule_draft["validation_status"] = validation_status
+    rule_draft["validation_message"] = validation_message
 
-def get_all_policies() -> List[Dict[str, Any]]:
+    return {
+        "policy": {
+            "policy_id": policy_id,
+            "company_id": company_id,
+            "title": title,
+            "industry": industry,
+            "text": text,
+            "version": "1.0",
+            "status": "ACTIVE",
+            "clauses": retrieved_clauses,
+            "missing_info_reason": None,
+            "clarification_questions": [],
+            "created_at": now
+        },
+        "proposed_rule": rule_draft
+    }
+
+def get_all_policies(company_id: str) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM policies ORDER BY created_at DESC")
+    cursor.execute("SELECT * FROM policies WHERE company_id = ? ORDER BY created_at DESC", (company_id,))
     rows = cursor.fetchall()
     policies = []
     for row in rows:
         policies.append({
             "policy_id": row["policy_id"],
+            "company_id": row["company_id"],
             "title": row["title"],
             "industry": row["industry"],
             "text": row["text"],
             "version": row["version"],
             "status": row["status"],
-            "clauses": json.loads(row["clauses_json"]),
+            "clauses": json.loads(row["clauses_json"] or "[]"),
             "missing_info_reason": row["missing_info_reason"],
             "clarification_questions": json.loads(row["clarification_questions_json"] or "[]"),
             "created_at": row["created_at"]
         })
     conn.close()
     return policies
+
+def delete_policy_service(policy_id: str, company_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT policy_id FROM policies WHERE policy_id = ? AND company_id = ?", (policy_id, company_id))
+    if not cursor.fetchone():
+        conn.close()
+        return False
+    
+    # Cascade delete associated rules for this company
+    cursor.execute("DELETE FROM rules WHERE source_policy_id = ? AND company_id = ?", (policy_id, company_id))
+    cursor.execute("DELETE FROM policies WHERE policy_id = ? AND company_id = ?", (policy_id, company_id))
+    conn.commit()
+    conn.close()
+    return True

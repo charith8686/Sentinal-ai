@@ -10,19 +10,19 @@ Sentinel AI is a specialized privacy governance and compliance monitoring system
 
 ### The Three Governing Axioms
 1. **RULES DECIDE** — Deterministic logic evaluates active compliance rules. AI never makes the compliance decision in the critical path.
-2. **AI EXPLAINS** — Generative AI (e.g. watsonx.ai / on-premises Spyre Accelerator) proposes candidate rules, interprets policy text, and explains alerts using cited legal evidence.
-3. **HUMANS APPROVE** — Dual-control governance requires explicit human review and sign-off before any rule can be activated.
+2. **AI EXPLAINS** — Generative AI (e.g. IBM watsonx.ai Granite 4 / LinuxONE models) proposes candidate rules, interprets policy text, and explains alerts using cited legal evidence.
+3. **SYSTEM VALIDATES & ACTIVATES** — Automated multi-stage testing verifies rule predicates, syntax, and logic against security standards before automatically activating rules into the runtime engine.
 
 ---
 
 ## 2. The Operational Workflow Chain
 
 ```
-Policy Input ➔ Clause Extraction ➔ AI-Proposed Rule ➔ Clarity Check ➔ Human Approval ➔ Rule Testing ➔ Deterministic Event Detection ➔ Alert ➔ Proof Card ➔ Audit Verification
+Policy Input ➔ Grounded Retrieval ➔ AI-Proposed Rule ➔ Clarity & Ambiguity Check ➔ Automated Validation ➔ Deterministic Event Detection ➔ Alert ➔ Proof Card ➔ SHA-256 Audit Verification
 ```
 
-- **Lane 1 (Control Lane — Asynchronous):** Policy ingestion, RAG grounded clause retrieval, ambiguity checks, candidate IF-THEN drafting, historical backtesting, and human sign-off.
-- **Lane 2 (Continuous Detection Lane — Real-Time):** Pure deterministic evaluation on IBM Z events and outbound prompt traffic, sub-millisecond execution, DLP pattern inspection, advisory MLz anomaly context, SHA-256 hash-chained proof cards.
+- **Lane 1 (Control Lane — Governance & Ingestion):** Multi-tenant company isolation, natural language policy submission, grounded citation retrieval, ambiguity evaluation, automated rule syntax & predicate validation, and dynamic activation.
+- **Lane 2 (Continuous Detection Lane — Real-Time):** Pure deterministic evaluation on server event streams and outbound prompt traffic, sub-millisecond execution, regex DLP pattern inspection, and immutable SHA-256 hash-chained proof cards.
 
 ---
 
@@ -35,7 +35,7 @@ The backend is built as a lightweight Python service optimized for execution on 
 # Build multi-architecture container
 docker build -t sentinel-ai:latest -f backend/Dockerfile backend/
 
-# Run on non-conflicting port (e.g. 8000, leaving existing JupyterLab on 8888 untouched)
+# Run on port 8000
 docker run -d \
   --name sentinel-ai \
   --restart unless-stopped \
@@ -61,17 +61,18 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## 4. Test Suite Verification
 
-Run the automated test suite covering all 17 quality requirements:
+Run the automated test suite:
 ```bash
 pytest backend/tests/
 ```
 Tests verify:
+- Multi-company workspace isolation and JWT authentication
 - Policy submission & grounded RAG clause retrieval
-- Ambiguity detection & routing to manual review (blocking vague policies)
-- Dual-control human approval enforcement (unapproved rules blocked from engine)
-- Ground-truth CSV parsing & verification against `ibm_z_sentinel_ai_sample_events.csv`
+- Ambiguity detection & clarification prompting (blocking subjective/vague policies)
+- Automated rule validation, predicate verification, and runtime activation
+- CSV dataset ingestion, DLP scanning, and deterministic rule evaluation
 - Cryptographic SHA-256 hash chaining, proof card generation, and tamper detection
-- Degraded mode operation (deterministic engine runs uninterrupted when AI is offline)
+- Degraded mode operation (deterministic engine runs uninterrupted when external AI is offline)
 
 ---
 

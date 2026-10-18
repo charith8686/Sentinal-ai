@@ -2,36 +2,39 @@ import os
 import json
 import datetime
 from typing import Optional, Dict, Any, List
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, Header, Depends, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database.db import init_db, get_connection
 from app.models.schemas import (
-    PolicyCreate, RuleApprovalRequest, EventIngest, AuditVerificationResult
+    CompanyRegister, CompanyLogin, PolicyCreate, EventIngest
 )
-from app.services.policy_service import create_policy_service, get_all_policies
+from app.services.auth_service import (
+    register_company, login_company, logout_company, get_company_by_token
+)
+from app.services.policy_service import (
+    create_policy_service, get_all_policies, delete_policy_service
+)
 from app.services.rule_service import (
-    get_all_rules, get_active_rules, process_rule_approval, update_rule_conditions
+    get_all_rules, get_active_rules, delete_rule_service
 )
-from app.services.backtest_service import backtest_rule_against_events
 from app.services.event_service import (
-    import_sample_csv, get_all_events, ingest_and_evaluate_event
+    import_sample_csv, import_csv_data, get_all_events, ingest_and_evaluate_event
 )
 from app.services.audit_service import (
     get_audit_ledger, verify_ledger_integrity, simulate_tamper, restore_ledger_integrity
 )
 from app.services.alert_service import get_alerts, update_alert_investigation
-from app.services.industry_service import get_industry_config, list_supported_industries
+from app.services.ai_service import get_ai_provider
 
 app = FastAPI(
-    title="Sentinel AI - Enterprise AI Governance & Real-Time Compliance on IBM Z",
-    version="1.0.0",
-    description="Deterministic Event Enforcement, AI Policy Interpretation, and Cryptographic SHA-256 Audit Ledger"
+    title="Sentinel AI - Enterprise AI Governance & Security on LinuxONE",
+    version="2.0.0",
+    description="Multi-Company Isolated AI Governance & Real-Time Deterministic Compliance"
 )
 
-# Enable CORS for local Vite development server
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,153 +46,114 @@ app.add_middleware(
 @app.on_event("startup")
 def on_startup():
     init_db()
-    # Check if DB needs initial seeding
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) as count FROM events")
-    count = cursor.fetchone()["count"]
-    conn.close()
-    if count == 0:
-        seed_initial_demo_data()
 
-def seed_initial_demo_data():
-    """Seeds the initial baseline demo data so the system is immediately usable."""
-    # 1. Create baseline policies
-    pol1 = create_policy_service(
-        title="Prohibition of Personal Data Transfer to External AI",
-        industry="Banking",
-        text="Personal customer data must not be sent to unapproved external AI services."
-    )
-    pol2 = create_policy_service(
-        title="Role-Based Access Control and Privilege Grants",
-        industry="Banking",
-        text="Only approved roles and authenticated employees may access customer records. Privilege changes require documented approval tickets."
-    )
-    pol3 = create_policy_service(
-        title="Bulk Customer Export Anomaly Thresholds",
-        industry="Banking",
-        text="Bulk exports of customer records exceeding 5000 records require secondary review and authorization."
-    )
+# --- AUTHENTICATION DEPENDENCY ---
+async def get_current_company(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required. Please sign in to your Company account."
+        )
+    parts = authorization.split()
+    token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
+    company = get_company_by_token(token)
+    if not company:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired or invalid token. Please log in again."
+        )
+    return company
 
-    # 2. Approve one baseline rule to demonstrate active state
-    rules = get_all_rules()
-    for r in rules:
-        if "External AI" in r["rule_name"]:
-            process_rule_approval(r["rule_id"], "APPROVE", "Verified against GDPR Art 44/48 and internal policy standard.", settings.current_reviewer)
-        elif "Privilege" in r["rule_name"]:
-            process_rule_approval(r["rule_id"], "APPROVE", "Verified under RACF SECADMIN governance.", settings.current_reviewer)
+# --- AUTH ENDPOINTS ---
 
-    # 3. Import ground-truth events from CSV
+@app.post("/api/auth/register")
+def register_endpoint(data: CompanyRegister):
     try:
-        import_sample_csv()
-    except Exception as e:
-        print(f"Warning during seed CSV import: {e}")
+        return register_company(
+            name=data.name,
+            email=data.email,
+            password=data.password,
+            industry=data.industry
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # 4. Ingest sample evaluations to populate audit ledger and alerts
-    events = get_all_events()
-    active_rules = get_active_rules()
-    for ev in events[:5]:
-        try:
-            # Generate initial audit records
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) as c FROM audit_ledger WHERE event_id = ?", (ev["event_id"],))
-            if cursor.fetchone()["c"] == 0:
-                pass
-            conn.close()
-        except Exception:
-            pass
+@app.post("/api/auth/login")
+def login_endpoint(data: CompanyLogin):
+    try:
+        return login_company(email=data.email, password=data.password)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
-# --- SYSTEM HEALTH & CONFIGURATION ENDPOINTS ---
+@app.post("/api/auth/logout")
+def logout_endpoint(authorization: Optional[str] = Header(None)):
+    if authorization:
+        parts = authorization.split()
+        token = parts[1] if len(parts) == 2 and parts[0].lower() == "bearer" else authorization
+        logout_company(token)
+    return {"message": "Successfully logged out."}
+
+@app.get("/api/auth/me")
+def get_current_company_profile(company: Dict[str, Any] = Depends(get_current_company)):
+    return company
+
+# --- SYSTEM HEALTH & SETTINGS ENDPOINTS ---
 
 @app.get("/api/health")
-def get_system_health():
+async def get_system_health(company: Optional[Dict[str, Any]] = None):
+    # Optional auth: returns server status and honest AI connection status
+    ai_provider = get_ai_provider()
+    ai_status = await ai_provider.test_connection()
     return {
         "status": "ONLINE",
         "app_name": settings.app_name,
-        "environment": settings.environment,
-        "ibm_z_architecture": "s390x / IBM LinuxONE / Telum II Emulation",
-        "governing_principles": [
-            "RULES DECIDE — deterministic compliance engine",
-            "AI EXPLAINS — advisory rule proposal & alert explanation",
-            "HUMANS APPROVE — mandatory human sign-off"
-        ],
-        "degraded_mode": {
-            "ai_service_online": settings.ai_service_online,
-            "ai_provider": settings.ai_provider if settings.ai_service_online else "OFFLINE (Degraded Mode)",
-            "impact": "Deterministic detection, DLP, alerts, and ledger remain fully functional." if not settings.ai_service_online else "Full AI policy drafting & explanation active."
+        "environment": "IBM LinuxONE Virtual Server",
+        "ai_service": {
+            "online": ai_status.get("connected", False),
+            "provider": ai_status.get("provider", "IBM watsonx.ai"),
+            "model_id": ai_status.get("model_id", "Not configured"),
+            "message": ai_status.get("message", "Model provider configured.")
         },
-        "current_reviewer": settings.current_reviewer,
-        "current_industry": settings.current_industry,
+        "linux_integration": {
+            "status": "Ready",
+            "log_sources": ["Linux Security Audit", "Syslog", "SMF/RACF Event Format"]
+        },
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()
     }
 
-@app.post("/api/settings/degraded-mode")
-def toggle_degraded_mode(online: bool = Body(..., embed=True)):
-    settings.ai_service_online = online
-    return {
-        "ai_service_online": settings.ai_service_online,
-        "message": "AI Plane is ONLINE" if settings.ai_service_online else "AI Plane is OFFLINE (DEGRADED MODE). Deterministic engine continues uninterrupted."
-    }
+@app.get("/api/settings/ai-status")
+async def check_ai_status(company: Dict[str, Any] = Depends(get_current_company)):
+    ai_provider = get_ai_provider()
+    return await ai_provider.test_connection()
 
-@app.post("/api/settings/reviewer")
-def switch_reviewer(reviewer_name: str = Body(..., embed=True)):
-    settings.current_reviewer = reviewer_name
-    return {"current_reviewer": settings.current_reviewer}
-
-@app.get("/api/settings/industry")
-def get_industry_details():
-    config = get_industry_config(settings.current_industry)
-    return {
-        "current_industry": settings.current_industry,
-        "config": config,
-        "available_industries": list_supported_industries()
-    }
-
-@app.post("/api/settings/industry")
-def set_industry(industry: str = Body(..., embed=True)):
-    if industry not in list_supported_industries():
-        raise HTTPException(status_code=400, detail="Unsupported industry.")
-    settings.current_industry = industry
-    return {
-        "current_industry": settings.current_industry,
-        "config": get_industry_config(industry)
-    }
-
-# --- DASHBOARD & OVERVIEW STATS ---
+# --- OVERVIEW DASHBOARD ENDPOINT (MULTI-TENANT ISOLATED) ---
 
 @app.get("/api/stats/overview")
-def get_dashboard_overview():
+def get_dashboard_overview(company: Dict[str, Any] = Depends(get_current_company)):
+    """
+    Returns only genuine records belonging to the authenticated company.
+    New company returns exact zeros.
+    """
+    company_id = company["company_id"]
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) as count FROM policies")
+    cursor.execute("SELECT COUNT(*) as count FROM policies WHERE company_id = ?", (company_id,))
     total_policies = cursor.fetchone()["count"]
 
-    cursor.execute("SELECT COUNT(*) as count FROM rules WHERE status = 'ACTIVE'")
+    cursor.execute("SELECT COUNT(*) as count FROM rules WHERE company_id = ? AND status = 'ACTIVE'", (company_id,))
     active_rules = cursor.fetchone()["count"]
 
-    cursor.execute("SELECT COUNT(*) as count FROM rules WHERE status IN ('PENDING_APPROVAL', 'NEEDS_REVIEW')")
-    pending_reviews = cursor.fetchone()["count"]
+    cursor.execute("SELECT COUNT(*) as count FROM alerts WHERE company_id = ? AND investigation_status != 'RESOLVED'", (company_id,))
+    open_alerts = cursor.fetchone()["count"]
 
-    cursor.execute("SELECT COUNT(*) as count FROM events")
-    events_evaluated = cursor.fetchone()["count"]
+    cursor.execute("SELECT COUNT(*) as count FROM audit_ledger WHERE company_id = ?", (company_id,))
+    total_audit_records = cursor.fetchone()["count"]
 
-    cursor.execute("SELECT COUNT(*) as count FROM alerts")
-    violations_detected = cursor.fetchone()["count"]
-
-    cursor.execute("SELECT COUNT(*) as count FROM audit_ledger WHERE is_tampered = 1")
-    tampered_count = cursor.fetchone()["count"]
-
-    # Alerts by severity
-    cursor.execute("SELECT severity, COUNT(*) as count FROM alerts GROUP BY severity")
-    severity_counts = {r["severity"]: r["count"] for r in cursor.fetchall()}
-
-    # Recent alerts
-    cursor.execute("SELECT * FROM alerts ORDER BY detection_time DESC LIMIT 5")
-    recent_alerts_rows = cursor.fetchall()
+    # Recent Alerts
+    cursor.execute("SELECT * FROM alerts WHERE company_id = ? ORDER BY detection_time DESC LIMIT 10", (company_id,))
     recent_alerts = []
-    for r in recent_alerts_rows:
+    for r in cursor.fetchall():
         recent_alerts.append({
             "alert_id": r["alert_id"],
             "event_id": r["event_id"],
@@ -201,186 +165,178 @@ def get_dashboard_overview():
             "investigation_status": r["investigation_status"]
         })
 
-    # Items requiring reviewer attention
-    cursor.execute("SELECT * FROM rules WHERE status IN ('PENDING_APPROVAL', 'NEEDS_REVIEW') ORDER BY created_at DESC LIMIT 5")
-    pending_rules = []
+    # Active Rules summary
+    cursor.execute("SELECT * FROM rules WHERE company_id = ? AND status = 'ACTIVE' ORDER BY created_at DESC LIMIT 10", (company_id,))
+    active_rules_list = []
     for r in cursor.fetchall():
-        pending_rules.append({
+        active_rules_list.append({
             "rule_id": r["rule_id"],
             "rule_name": r["rule_name"],
             "source_clause_id": r["source_clause_id"],
             "risk_level": r["risk_level"],
-            "status": r["status"]
+            "status": r["status"],
+            "created_at": r["created_at"]
         })
 
     conn.close()
 
-    integrity = verify_ledger_integrity()
+    integrity = verify_ledger_integrity(company_id)
 
     return {
-        "total_policies": total_policies,
-        "active_rules": active_rules,
-        "pending_reviews": pending_reviews,
-        "events_evaluated": events_evaluated,
-        "violations_detected": violations_detected,
-        "audit_verification_status": "VERIFIED_INTACT" if integrity["is_valid"] else "INTEGRITY_COMPROMISED",
-        "tampered_blocks_count": tampered_count,
-        "severity_distribution": {
-            "CRITICAL": severity_counts.get("CRITICAL", 0),
-            "HIGH": severity_counts.get("HIGH", 0),
-            "MEDIUM": severity_counts.get("MEDIUM", 0),
-            "LOW": severity_counts.get("LOW", 0)
+        "metrics": {
+            "policies": total_policies,
+            "active_rules": active_rules,
+            "open_alerts": open_alerts,
+            "audit_records": total_audit_records
         },
+        "active_rules_list": active_rules_list,
         "recent_alerts": recent_alerts,
-        "pending_rules_attention": pending_rules,
-        "performance_metrics": {
-            "p50_latency_ms": 0.42,
-            "p95_latency_ms": 1.15,
-            "rule_engine_throughput": "500,000+ events/sec (C/Python compiled on zIIP)",
-            "sensor_health": {
-                "ibm_z_smf_adapter": "ONLINE (0.2s latency)",
-                "ai_gateway_dlp": "ONLINE (0.4s latency)",
-                "audit_hasher": "ONLINE (0.1ms/card)"
-            }
+        "system_status": {
+            "environment": "IBM LinuxONE Virtual Server",
+            "deterministic_engine": "Active",
+            "audit_ledger": "Verified Intact" if integrity["is_valid"] else "Tamper Detected",
+            "audit_is_valid": integrity["is_valid"],
+            "company_name": company["name"],
+            "company_id": company["company_id"]
         }
     }
 
-# --- POLICY CENTER ENDPOINTS ---
+# --- POLICY ENDPOINTS (COMPANY ISOLATED) ---
 
 @app.get("/api/policies")
-def list_policies():
-    return get_all_policies()
+def list_policies(company: Dict[str, Any] = Depends(get_current_company)):
+    return get_all_policies(company["company_id"])
 
 @app.post("/api/policies")
-def submit_policy(policy_in: PolicyCreate):
-    # Check degraded mode
-    if not settings.ai_service_online:
-        # Policy interpretation in degraded mode uses offline rule generator with explicit annotation
-        res = create_policy_service(policy_in.title, policy_in.industry, policy_in.text)
-        if res.get("proposed_rule"):
-            res["proposed_rule"]["explanation"] += " [GENERATED VIA LOCAL TEMPLATE ENGINE - AI PLANE OFFLINE]"
-        return res
-    return create_policy_service(policy_in.title, policy_in.industry, policy_in.text)
+async def submit_policy(policy_in: PolicyCreate, company: Dict[str, Any] = Depends(get_current_company)):
+    return await create_policy_service(
+        title=policy_in.title,
+        industry=policy_in.industry or company.get("industry", "Banking"),
+        text=policy_in.text,
+        company_id=company["company_id"]
+    )
 
-# --- RULE REGISTRY & HUMAN APPROVAL ENDPOINTS ---
+@app.delete("/api/policies/{policy_id}")
+def delete_policy(policy_id: str, company: Dict[str, Any] = Depends(get_current_company)):
+    success = delete_policy_service(policy_id, company["company_id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Policy not found or unauthorized.")
+    return {"status": "success", "message": "Policy and associated rules deleted."}
+
+# --- RULES ENDPOINTS (COMPANY ISOLATED) ---
 
 @app.get("/api/rules")
-def list_rules(status: Optional[str] = None):
-    rules = get_all_rules()
-    if status:
-        rules = [r for r in rules if r["status"] == status.upper()]
-    return rules
+def list_rules(company: Dict[str, Any] = Depends(get_current_company)):
+    return get_all_rules(company["company_id"])
 
-@app.post("/api/rules/{rule_id}/approval")
-def review_rule(rule_id: str, request: RuleApprovalRequest):
-    reviewer = request.reviewer or settings.current_reviewer
-    try:
-        return process_rule_approval(
-            rule_id=rule_id,
-            decision=request.decision,
-            comment=request.comment,
-            reviewer=reviewer
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+@app.delete("/api/rules/{rule_id}")
+def delete_rule(rule_id: str, company: Dict[str, Any] = Depends(get_current_company)):
+    success = delete_rule_service(rule_id, company["company_id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Rule not found or unauthorized.")
+    return {"status": "success", "message": "Rule removed."}
 
-@app.post("/api/rules/{rule_id}/backtest")
-def backtest_rule(rule_id: str):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM rules WHERE rule_id = ?", (rule_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Rule not found.")
-    
-    rule_data = {
-        "rule_id": row["rule_id"],
-        "rule_name": row["rule_name"],
-        "conditions": json.loads(row["conditions_json"]),
-        "classification": row["classification"],
-        "recommended_action": row["recommended_action"],
-        "risk_level": row["risk_level"]
-    }
-    conn.close()
-
-    events = get_all_events()
-    if not events:
-        import_sample_csv()
-        events = get_all_events()
-
-    return backtest_rule_against_events(rule_id, rule_data, events)
-
-# --- EVENT MONITORING ENDPOINTS ---
+# --- EVENTS & ALERTS ENDPOINTS (COMPANY ISOLATED) ---
 
 @app.get("/api/events")
-def list_events():
-    return get_all_events()
+def list_events(company: Dict[str, Any] = Depends(get_current_company)):
+    return get_all_events(company["company_id"])
 
 @app.post("/api/events/import-csv")
-def import_csv_endpoint():
-    try:
-        return import_sample_csv()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def import_csv_endpoint(
+    file: Optional[UploadFile] = File(None),
+    company: Dict[str, Any] = Depends(get_current_company)
+):
+    if not file or not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="No CSV file was uploaded. Please select a valid .csv file to import."
+        )
 
-@app.post("/api/events/simulate")
-def simulate_event(event_in: EventIngest):
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file format: Only comma-separated (.csv) files are supported."
+        )
+
     try:
-        res = ingest_and_evaluate_event(event_in.dict())
-        return res
+        content_bytes = await file.read()
+        if not content_bytes:
+            raise HTTPException(status_code=400, detail="The selected CSV file is empty.")
+
+        try:
+            csv_text = content_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            csv_text = content_bytes.decode("latin-1")
+
+        return import_csv_data(company["company_id"], csv_text)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import dataset: {str(e)}")
 
-# --- ALERTS & INVESTIGATIONS ENDPOINTS ---
+@app.post("/api/events/simulate")
+def simulate_event(event_in: EventIngest, company: Dict[str, Any] = Depends(get_current_company)):
+    try:
+        return ingest_and_evaluate_event(event_in.dict(), company["company_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/alerts")
 def list_alerts(
     severity: Optional[str] = Query(None),
-    status: Optional[str] = Query(None)
+    status: Optional[str] = Query(None),
+    company: Dict[str, Any] = Depends(get_current_company)
 ):
-    return get_alerts(severity=severity, status=status)
+    return get_alerts(company["company_id"], severity=severity, status=status)
 
 @app.patch("/api/alerts/{alert_id}")
 def update_alert(
     alert_id: str,
     status: Optional[str] = Body(None),
     assigned_to: Optional[str] = Body(None),
-    new_note: Optional[str] = Body(None)
+    new_note: Optional[str] = Body(None),
+    company: Dict[str, Any] = Depends(get_current_company)
 ):
     try:
         return update_alert_investigation(
             alert_id=alert_id,
+            company_id=company["company_id"],
             status=status,
             assigned_to=assigned_to,
             new_note=new_note,
-            reviewer=settings.current_reviewer
+            reviewer=company["name"]
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
-# --- AUDIT LEDGER & PROOF CARDS ENDPOINTS ---
+# --- AUDIT LEDGER ENDPOINTS (COMPANY ISOLATED) ---
 
 @app.get("/api/audit/ledger")
-def list_audit_ledger():
-    return get_audit_ledger()
+def list_audit_ledger(company: Dict[str, Any] = Depends(get_current_company)):
+    return get_audit_ledger(company["company_id"])
 
 @app.post("/api/audit/verify")
-def verify_audit_ledger():
-    return verify_ledger_integrity()
+def verify_audit_ledger(company: Dict[str, Any] = Depends(get_current_company)):
+    return verify_ledger_integrity(company["company_id"])
 
 @app.post("/api/audit/tamper-demo")
-def tamper_demo_endpoint(proof_id: Optional[str] = Body(None, embed=True)):
+def tamper_demo_endpoint(
+    proof_id: Optional[str] = Body(None, embed=True),
+    company: Dict[str, Any] = Depends(get_current_company)
+):
     try:
-        return simulate_tamper(proof_id)
+        return simulate_tamper(company["company_id"], proof_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/audit/restore")
-def restore_audit_endpoint():
-    return restore_ledger_integrity()
+def restore_audit_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
+    return restore_ledger_integrity(company["company_id"])
 
-# --- OPTIONAL STATIC SERVING IF FRONTEND IS COMPILED ---
+# Static frontend serving
 dist_path = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 if os.path.exists(dist_path):
     app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")

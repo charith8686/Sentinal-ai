@@ -4,11 +4,10 @@ import { TopBar } from './components/TopBar';
 import { OverviewDashboard } from './components/OverviewDashboard';
 import { PolicyCenter } from './components/PolicyCenter';
 import { RuleRegistry } from './components/RuleRegistry';
-import { RuleBacktest } from './components/RuleBacktest';
-import { EventMonitoring } from './components/EventMonitoring';
-import { AlertsInvestigations } from './components/AlertsInvestigations';
+import { EventsAndAlerts } from './components/EventsAndAlerts';
 import { AuditLedger } from './components/AuditLedger';
 import { SettingsIndustry } from './components/SettingsIndustry';
+import { CompanyAuthModal } from './components/CompanyAuthModal';
 import { api } from './api';
 import {
   SystemHealth,
@@ -18,10 +17,24 @@ import {
   EventItem,
   AlertItem,
   ProofCardItem,
-  AuditVerification
+  AuditVerification,
+  CompanyProfile
 } from './types';
 
 export function App() {
+  const [company, setCompany] = useState<CompanyProfile | null>(() => {
+    const saved = localStorage.getItem('sentinel_company');
+    const token = localStorage.getItem('sentinel_token');
+    if (saved && token) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
+
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
@@ -31,20 +44,28 @@ export function App() {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [ledger, setLedger] = useState<ProofCardItem[]>([]);
   const [verificationResult, setVerificationResult] = useState<AuditVerification | null>(null);
-  const [industryConfig, setIndustryConfig] = useState<any>(null);
 
-  // Selected item targets for cross-tab jumping
-  const [focusedRuleId, setFocusedRuleId] = useState<string | null>(null);
+  // Cross-tab jumping
+  const [focusedAlertId, setFocusedAlertId] = useState<string | null>(null);
   const [focusedProofId, setFocusedProofId] = useState<string | null>(null);
 
-  // Initial load
   useEffect(() => {
-    loadAllData();
+    const handleLogoutEvent = () => {
+      setCompany(null);
+    };
+    window.addEventListener('sentinel-logout', handleLogoutEvent);
+    return () => window.removeEventListener('sentinel-logout', handleLogoutEvent);
   }, []);
+
+  useEffect(() => {
+    if (company) {
+      loadAllData();
+    }
+  }, [company]);
 
   const loadAllData = async () => {
     try {
-      const [h, ov, p, r, ev, al, ld, vf, ind] = await Promise.all([
+      const [h, ov, p, r, ev, al, ld, vf] = await Promise.all([
         api.getHealth(),
         api.getOverview(),
         api.getPolicies(),
@@ -52,8 +73,7 @@ export function App() {
         api.getEvents(),
         api.getAlerts(),
         api.getLedger(),
-        api.verifyAudit(),
-        api.getIndustry()
+        api.verifyAudit()
       ]);
       setHealth(h);
       setOverview(ov);
@@ -63,30 +83,14 @@ export function App() {
       setAlerts(al);
       setLedger(ld);
       setVerificationResult(vf);
-      setIndustryConfig(ind?.config);
     } catch (err) {
-      console.error('Failed to load initial data:', err);
+      console.error('Failed to load company workspace data:', err);
     }
   };
 
-  const handleToggleDegraded = async (online: boolean) => {
-    try {
-      await api.toggleDegradedMode(online);
-      const h = await api.getHealth();
-      setHealth(h);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleSwitchReviewer = async (reviewer: string) => {
-    try {
-      await api.switchReviewer(reviewer);
-      const h = await api.getHealth();
-      setHealth(h);
-    } catch (err) {
-      console.error(err);
-    }
+  const handleLogout = async () => {
+    await api.logout();
+    setCompany(null);
   };
 
   const handleSubmitPolicy = async (data: { title: string; industry: string; text: string }) => {
@@ -95,8 +99,14 @@ export function App() {
     return res;
   };
 
-  const handleApproveRule = async (ruleId: string, decision: 'APPROVE' | 'REJECT', comment?: string) => {
-    const res = await api.approveRule(ruleId, decision, comment, health?.current_reviewer);
+  const handleDeletePolicy = async (policyId: string) => {
+    const res = await api.deletePolicy(policyId);
+    await loadAllData();
+    return res;
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    const res = await api.deleteRule(ruleId);
     await loadAllData();
     return res;
   };
@@ -107,8 +117,8 @@ export function App() {
     return res;
   };
 
-  const handleImportCsv = async () => {
-    const res = await api.importCsv();
+  const handleImportCsv = async (file: File) => {
+    const res = await api.importCsv(file);
     await loadAllData();
     return res;
   };
@@ -117,6 +127,8 @@ export function App() {
     const res = await api.updateAlert(alertId, data);
     const updatedAlerts = await api.getAlerts();
     setAlerts(updatedAlerts);
+    const ov = await api.getOverview();
+    setOverview(ov);
     return res;
   };
 
@@ -150,22 +162,9 @@ export function App() {
     return res;
   };
 
-  const handleSetIndustry = async (industry: string) => {
-    const res = await api.setIndustry(industry);
-    setIndustryConfig(res.config);
-    const h = await api.getHealth();
-    setHealth(h);
-    return res;
-  };
-
-  const navigateToRuleReview = (ruleId: string) => {
-    setFocusedRuleId(ruleId);
-    setActiveTab('rules');
-  };
-
-  const navigateToBacktest = (ruleId: string) => {
-    setFocusedRuleId(ruleId);
-    setActiveTab('backtest');
+  const navigateToAlertInspect = (alertId: string) => {
+    setFocusedAlertId(alertId);
+    setActiveTab('events-alerts');
   };
 
   const navigateToProofCard = (proofId: string) => {
@@ -173,29 +172,34 @@ export function App() {
     setActiveTab('audit');
   };
 
-  const pendingReviewsCount = rules.filter((r) => r.status === 'PENDING_APPROVAL' || r.status === 'NEEDS_REVIEW').length;
-  const openAlertsCount = alerts.filter((a) => a.investigation_status === 'OPEN').length;
+  // If no company session, render Company Login / Registration modal directly
+  if (!company) {
+    return <CompanyAuthModal onSuccess={(comp) => setCompany(comp)} />;
+  }
+
+  const openAlertsCount = overview?.metrics?.open_alerts ?? alerts.filter((a) => a.investigation_status === 'OPEN').length;
 
   return (
     <div className="app-container">
-      {/* Collapsible Enterprise Sidebar */}
+      {/* Sidebar with 6 Sections & Company Details */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={(t) => {
           setActiveTab(t);
           setFocusedProofId(null);
+          setFocusedAlertId(null);
         }}
-        pendingReviewsCount={pendingReviewsCount}
         openAlertsCount={openAlertsCount}
+        company={company}
+        onLogout={handleLogout}
       />
 
-      {/* Main App Layout */}
+      {/* Main Content Area */}
       <div className="main-content">
         <TopBar
           health={health}
-          onToggleDegraded={handleToggleDegraded}
-          onSwitchReviewer={handleSwitchReviewer}
-          tamperedBlocksCount={overview?.tampered_blocks_count || 0}
+          company={company}
+          auditIsValid={verificationResult?.is_valid ?? true}
         />
 
         <main className="content-body">
@@ -203,8 +207,7 @@ export function App() {
             <OverviewDashboard
               data={overview}
               onNavigate={setActiveTab}
-              onVerifyLedger={handleVerifyLedger}
-              onSimulateQuick={() => setActiveTab('events')}
+              onInspectAlert={navigateToAlertInspect}
             />
           )}
 
@@ -212,41 +215,27 @@ export function App() {
             <PolicyCenter
               policies={policies}
               onSubmitPolicy={handleSubmitPolicy}
-              onNavigateToRuleReview={navigateToRuleReview}
-              currentIndustry={health?.current_industry || 'Banking'}
+              onDeletePolicy={handleDeletePolicy}
+              onNavigateToRules={() => setActiveTab('rules')}
+              currentIndustry={company?.industry || 'Banking'}
             />
           )}
 
           {activeTab === 'rules' && (
             <RuleRegistry
               rules={rules}
-              onApproveRule={handleApproveRule}
-              onNavigateToBacktest={navigateToBacktest}
-              selectedRuleId={focusedRuleId}
+              onDeleteRule={handleDeleteRule}
             />
           )}
 
-          {activeTab === 'backtest' && (
-            <RuleBacktest
-              rules={rules}
-              initialRuleId={focusedRuleId}
-            />
-          )}
-
-          {activeTab === 'events' && (
-            <EventMonitoring
+          {activeTab === 'events-alerts' && (
+            <EventsAndAlerts
               events={events}
-              onSimulateEvent={handleSimulateEvent}
-              onImportCsv={handleImportCsv}
-              onViewProofCard={navigateToProofCard}
-            />
-          )}
-
-          {activeTab === 'alerts' && (
-            <AlertsInvestigations
               alerts={alerts}
+              onSimulateEvent={handleSimulateEvent}
               onUpdateAlert={handleUpdateAlert}
               onViewProofCard={navigateToProofCard}
+              selectedAlertId={focusedAlertId}
             />
           )}
 
@@ -264,10 +253,7 @@ export function App() {
           {activeTab === 'settings' && (
             <SettingsIndustry
               health={health}
-              onToggleDegraded={handleToggleDegraded}
-              currentIndustry={health?.current_industry || 'Banking'}
-              onSetIndustry={handleSetIndustry}
-              industryConfig={industryConfig}
+              onImportCsv={handleImportCsv}
             />
           )}
         </main>

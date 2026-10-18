@@ -3,15 +3,16 @@ from typing import Dict, Any, List, Optional
 from app.database.db import get_connection
 from app.engine.hash_chain import verify_chain, GENESIS_HASH, create_proof_payload, canonical_serialize, compute_record_hash
 
-def get_audit_ledger() -> List[Dict[str, Any]]:
+def get_audit_ledger(company_id: str) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM audit_ledger ORDER BY id ASC")
+    cursor.execute("SELECT * FROM audit_ledger WHERE company_id = ? ORDER BY id ASC", (company_id,))
     rows = cursor.fetchall()
     records = []
     for r in rows:
         records.append({
             "id": r["id"],
+            "company_id": r["company_id"],
             "proof_id": r["proof_id"],
             "event_id": r["event_id"],
             "event_timestamp": r["event_timestamp"],
@@ -32,10 +33,19 @@ def get_audit_ledger() -> List[Dict[str, Any]]:
     conn.close()
     return records
 
-def verify_ledger_integrity() -> Dict[str, Any]:
-    records = get_audit_ledger()
+def verify_ledger_integrity(company_id: str) -> Dict[str, Any]:
+    records = get_audit_ledger(company_id)
+    if not records:
+        return {
+            "is_valid": True,
+            "total_records": 0,
+            "genesis_hash": GENESIS_HASH,
+            "latest_hash": GENESIS_HASH,
+            "first_corrupted_id": None,
+            "details": "No audit records created yet for this company. Ledger is ready to seal first event."
+        }
+
     is_valid, corrupted_id, details = verify_chain(records)
-    
     latest_hash = records[-1]["current_hash"] if records else GENESIS_HASH
     
     return {
@@ -47,36 +57,30 @@ def verify_ledger_integrity() -> Dict[str, Any]:
         "details": details
     }
 
-def simulate_tamper(proof_id: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Simulates malicious tampering with an audit record (e.g. changing classification
-    from PRIVACY_VIOLATION to NORMAL, or modifying approver_id).
-    This breaks the cryptographic SHA-256 chain.
-    """
+def simulate_tamper(company_id: str, proof_id: Optional[str] = None) -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
 
     if proof_id:
-        cursor.execute("SELECT * FROM audit_ledger WHERE proof_id = ?", (proof_id,))
+        cursor.execute("SELECT * FROM audit_ledger WHERE proof_id = ? AND company_id = ?", (proof_id, company_id))
     else:
-        cursor.execute("SELECT * FROM audit_ledger ORDER BY id ASC LIMIT 1")
+        cursor.execute("SELECT * FROM audit_ledger WHERE company_id = ? ORDER BY id ASC LIMIT 1", (company_id,))
     
     target = cursor.fetchone()
     if not target:
         conn.close()
-        raise ValueError("No audit records available to tamper with.")
+        raise ValueError("No audit records available to tamper with for this company.")
 
     target_proof_id = target["proof_id"]
     original_classification = target["classification"]
     tampered_classification = "NORMAL" if original_classification != "NORMAL" else "PRIVACY_VIOLATION"
 
-    # Intentionally update record payload WITHOUT updating its current_hash or subsequent hashes!
     cursor.execute("""
         UPDATE audit_ledger
         SET classification = ?,
             is_tampered = 1
-        WHERE proof_id = ?
-    """, (tampered_classification, target_proof_id))
+        WHERE proof_id = ? AND company_id = ?
+    """, (tampered_classification, target_proof_id, company_id))
 
     conn.commit()
     conn.close()
@@ -86,16 +90,13 @@ def simulate_tamper(proof_id: Optional[str] = None) -> Dict[str, Any]:
         "proof_id": target_proof_id,
         "original_classification": original_classification,
         "tampered_classification": tampered_classification,
-        "message": f"Record {target_proof_id} tampered. SHA-256 payload no longer matches stored hash."
+        "message": f"Audit record {target_proof_id} tampered. Cryptographic SHA-256 chain will now flag mismatch."
     }
 
-def restore_ledger_integrity() -> Dict[str, Any]:
-    """
-    Recalculates and re-seals the SHA-256 chain so all links are valid again.
-    """
+def restore_ledger_integrity(company_id: str) -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM audit_ledger ORDER BY id ASC")
+    cursor.execute("SELECT * FROM audit_ledger WHERE company_id = ? ORDER BY id ASC", (company_id,))
     rows = cursor.fetchall()
     
     prev_hash = GENESIS_HASH
@@ -124,8 +125,8 @@ def restore_ledger_integrity() -> Dict[str, Any]:
             SET previous_hash = ?,
                 current_hash = ?,
                 is_tampered = 0
-            WHERE id = ?
-        """, (prev_hash, curr_hash, r["id"]))
+            WHERE id = ? AND company_id = ?
+        """, (prev_hash, curr_hash, r["id"], company_id))
         
         prev_hash = curr_hash
         recomputed_count += 1
@@ -137,5 +138,5 @@ def restore_ledger_integrity() -> Dict[str, Any]:
         "status": "restored",
         "records_re_sealed": recomputed_count,
         "latest_hash": prev_hash,
-        "message": "Audit ledger re-sealed with consistent cryptographic hashes."
+        "message": "Company audit ledger re-sealed with consistent SHA-256 hashes."
     }

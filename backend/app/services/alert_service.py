@@ -4,18 +4,19 @@ from typing import Dict, Any, List, Optional
 from app.database.db import get_connection
 
 def get_alerts(
+    company_id: str,
     severity: Optional[str] = None,
     status: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    query = "SELECT * FROM alerts WHERE 1=1"
-    params = []
+    query = "SELECT * FROM alerts WHERE company_id = ?"
+    params = [company_id]
 
-    if severity:
+    if severity and severity != "ALL":
         query += " AND severity = ?"
         params.append(severity)
-    if status:
+    if status and status != "ALL":
         query += " AND investigation_status = ?"
         params.append(status)
 
@@ -26,6 +27,7 @@ def get_alerts(
     for r in rows:
         alerts.append({
             "alert_id": r["alert_id"],
+            "company_id": r["company_id"],
             "event_id": r["event_id"],
             "severity": r["severity"],
             "detection_time": r["detection_time"],
@@ -46,22 +48,19 @@ def get_alerts(
 
 def update_alert_investigation(
     alert_id: str,
+    company_id: str,
     status: Optional[str] = None,
     assigned_to: Optional[str] = None,
     new_note: Optional[str] = None,
-    reviewer: str = "SOC Reviewer"
+    reviewer: str = "Company Security Lead"
 ) -> Dict[str, Any]:
-    """
-    Updates investigation workflow on an alert.
-    CRITICAL: Preserves the original compliance verdict and audit proof record unchanged!
-    """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM alerts WHERE alert_id = ?", (alert_id,))
+    cursor.execute("SELECT * FROM alerts WHERE alert_id = ? AND company_id = ?", (alert_id, company_id))
     row = cursor.fetchone()
     if not row:
         conn.close()
-        raise ValueError(f"Alert {alert_id} not found.")
+        raise ValueError(f"Alert {alert_id} not found in this company workspace.")
 
     notes = json.loads(row["investigation_notes_json"] or "[]")
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -81,8 +80,8 @@ def update_alert_investigation(
         SET investigation_status = ?,
             assigned_to = ?,
             investigation_notes_json = ?
-        WHERE alert_id = ?
-    """, (updated_status, updated_assignee, json.dumps(notes), alert_id))
+        WHERE alert_id = ? AND company_id = ?
+    """, (updated_status, updated_assignee, json.dumps(notes), alert_id, company_id))
 
     conn.commit()
     conn.close()

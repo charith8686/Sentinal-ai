@@ -1,296 +1,266 @@
 import React from 'react';
 import {
-  ShieldCheck,
   FileText,
+  ShieldCheck,
   AlertTriangle,
-  Server,
   Link2,
-  Clock,
+  Plus,
   ArrowRight,
-  CheckCircle,
-  AlertOctagon,
-  Zap,
-  Activity,
-  Plus
+  CheckCircle2,
+  Server,
+  Building2
 } from 'lucide-react';
 import { DashboardOverview } from '../types';
 
 interface OverviewDashboardProps {
   data: DashboardOverview | null;
   onNavigate: (tab: string) => void;
-  onVerifyLedger: () => void;
-  onSimulateQuick: () => void;
+  onInspectAlert: (alertId: string) => void;
 }
 
 export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
   data,
   onNavigate,
-  onVerifyLedger,
-  onSimulateQuick
+  onInspectAlert
 }) => {
   if (!data) {
-    return <div style={{ padding: 40, textAlign: 'center', color: '#9BA8AB' }}>Loading Sentinel AI telemetry...</div>;
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: '#4A5C6A' }}>
+        Loading company workspace...
+      </div>
+    );
   }
 
-  const isAuditVerified = data.audit_verification_status === 'VERIFIED_INTACT';
+  const { metrics, active_rules_list, recent_alerts, system_status } = data;
+  const isBrandNew = metrics.policies === 0 && metrics.active_rules === 0 && metrics.open_alerts === 0;
 
   return (
     <div>
-      {/* Header with Title and Quick Action Buttons */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+      {/* Top Header: Title & Company Indicator */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <div>
-          <h1 style={{ fontSize: 24, marginBottom: 4 }}>IBM Z Governance & Compliance Overview</h1>
-          <p style={{ color: '#9BA8AB', fontSize: 13 }}>
-            Continuous deterministic monitoring of mainframe transactions (SMF/RACF/CICS) & external AI gateways.
+          <h1 style={{ fontSize: 22, color: '#11212D', marginBottom: 4 }}>
+            Company Governance Overview
+          </h1>
+          <p style={{ color: '#4A5C6A', fontSize: 13 }}>
+            Continuous privacy and security monitoring on IBM LinuxONE for <strong style={{ color: '#11212D' }}>{system_status.company_name}</strong>.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Server status indicator */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px',
+            backgroundColor: '#FFFFFF',
+            border: '1px solid #CCD0CF',
+            borderRadius: 6,
+            fontSize: 12,
+            color: '#253745'
+          }}>
+            <Server size={14} color="#4A5C6A" />
+            <span>LinuxONE Deployment</span>
+            <span style={{ color: '#CCD0CF' }}>•</span>
+            <span style={{ color: '#166534', fontWeight: 600 }}>Engine Active</span>
+          </div>
+
           <button className="btn btn-primary" onClick={() => onNavigate('policies')}>
             <Plus size={15} /> Add Policy
           </button>
-          <button className="btn btn-primary" onClick={() => onNavigate('rules')}>
-            <ShieldCheck size={15} /> Review Pending Rules ({data.pending_reviews})
-          </button>
-          <button className="btn btn-accent" onClick={onSimulateQuick}>
-            <Zap size={15} /> Simulate Event
-          </button>
-          <button
-            className={`btn ${isAuditVerified ? 'btn-success' : 'btn-danger'}`}
-            onClick={onVerifyLedger}
-          >
-            <Link2 size={15} /> Verify Audit Ledger
-          </button>
         </div>
       </div>
 
-      {/* KPI Stats Cards */}
-      <div className="grid-4" style={{ marginBottom: 24 }}>
-        <div className="card" style={{ padding: '16px 20px', borderLeft: '4px solid #38BDF8' }}>
+      {/* Fresh workspace banner for brand new companies */}
+      {isBrandNew && (
+        <div className="card" style={{
+          padding: '24px',
+          marginBottom: 24,
+          backgroundColor: '#FFFFFF',
+          border: '1px solid #CCD0CF',
+          borderLeft: '4px solid #253745'
+        }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#9BA8AB' }}>Total Policies</span>
-            <FileText size={18} color="#38BDF8" />
+            <div>
+              <h3 style={{ fontSize: 16, color: '#11212D', marginBottom: 6 }}>
+                Welcome to your isolated company workspace
+              </h3>
+              <p style={{ fontSize: 13, color: '#4A5C6A', margin: 0, maxWidth: 640 }}>
+                This workspace starts completely empty. Submit your organization's first privacy policy or security mandate. Our shared AI model will analyze it, ground it against legal citations, and automatically generate and activate executable rules.
+              </p>
+            </div>
+            <button className="btn btn-primary" onClick={() => onNavigate('policies')}>
+              <Plus size={14} /> Add Your First Policy
+            </button>
           </div>
-          <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#FFFFFF' }}>
-            {data.total_policies}
+        </div>
+      )}
+
+      {/* Four Useful Metrics: Policies, Active Rules, Open Alerts, Audit Records */}
+      <div className="grid-4" style={{ marginBottom: 28 }}>
+        {/* 1. Policies */}
+        <div className="card" style={{ padding: '18px 20px', cursor: 'pointer' }} onClick={() => onNavigate('policies')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: '#4A5C6A', fontWeight: 500 }}>Policies</span>
+            <FileText size={18} color="#4A5C6A" />
           </div>
-          <div style={{ fontSize: 11, color: '#9BA8AB', marginTop: 4 }}>
-            Ingested natural language mandates
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#11212D', marginTop: 8 }}>
+            {metrics.policies}
+          </div>
+          <div style={{ fontSize: 12, color: '#6B7B83', marginTop: 4 }}>
+            Company governance policies
           </div>
         </div>
 
-        <div className="card" style={{ padding: '16px 20px', borderLeft: '4px solid #10B981' }}>
+        {/* 2. Active Rules */}
+        <div className="card" style={{ padding: '18px 20px', cursor: 'pointer' }} onClick={() => onNavigate('rules')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#9BA8AB' }}>Active Approved Rules</span>
-            <ShieldCheck size={18} color="#10B981" />
+            <span style={{ fontSize: 13, color: '#4A5C6A', fontWeight: 500 }}>Active Rules</span>
+            <ShieldCheck size={18} color="#166534" />
           </div>
-          <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#10B981' }}>
-            {data.active_rules}
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#166534', marginTop: 8 }}>
+            {metrics.active_rules}
           </div>
-          <div style={{ fontSize: 11, color: '#9BA8AB', marginTop: 4 }}>
-            Deterministically enforced in runtime
+          <div style={{ fontSize: 12, color: '#6B7B83', marginTop: 4 }}>
+            Enforced deterministic rules
           </div>
         </div>
 
-        <div className="card" style={{ padding: '16px 20px', borderLeft: '4px solid #F59E0B' }}>
+        {/* 3. Open Alerts */}
+        <div className="card" style={{ padding: '18px 20px', cursor: 'pointer' }} onClick={() => onNavigate('events-alerts')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#9BA8AB' }}>Pending Human Reviews</span>
-            <Clock size={18} color="#F59E0B" />
+            <span style={{ fontSize: 13, color: '#4A5C6A', fontWeight: 500 }}>Open Alerts</span>
+            <AlertTriangle size={18} color={metrics.open_alerts > 0 ? '#991B1B' : '#4A5C6A'} />
           </div>
-          <div style={{ fontSize: 28, fontWeight: 700, marginTop: 8, color: '#F59E0B' }}>
-            {data.pending_reviews}
+          <div style={{ fontSize: 32, fontWeight: 700, color: metrics.open_alerts > 0 ? '#991B1B' : '#11212D', marginTop: 8 }}>
+            {metrics.open_alerts}
           </div>
-          <div style={{ fontSize: 11, color: '#9BA8AB', marginTop: 4 }}>
-            Awaiting human compliance sign-off
+          <div style={{ fontSize: 12, color: '#6B7B83', marginTop: 4 }}>
+            Unresolved detections
           </div>
         </div>
 
-        <div className="card" style={{ padding: '16px 20px', borderLeft: `4px solid ${isAuditVerified ? '#10B981' : '#EF4444'}` }}>
+        {/* 4. Audit Records */}
+        <div className="card" style={{ padding: '18px 20px', cursor: 'pointer' }} onClick={() => onNavigate('audit')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#9BA8AB' }}>Ledger Integrity</span>
-            {isAuditVerified ? <CheckCircle size={18} color="#10B981" /> : <AlertOctagon size={18} color="#EF4444" />}
+            <span style={{ fontSize: 13, color: '#4A5C6A', fontWeight: 500 }}>Audit Records</span>
+            <Link2 size={18} color="#253745" />
           </div>
-          <div style={{ fontSize: 18, fontWeight: 700, marginTop: 12, color: isAuditVerified ? '#10B981' : '#EF4444' }}>
-            {isAuditVerified ? 'VERIFIED INTACT' : 'TAMPER DETECTED'}
+          <div style={{ fontSize: 32, fontWeight: 700, color: '#253745', marginTop: 8 }}>
+            {metrics.audit_records}
           </div>
-          <div style={{ fontSize: 11, color: '#9BA8AB', marginTop: 8 }}>
-            SHA-256 Hash Chain ({data.tampered_blocks_count} altered blocks)
+          <div style={{ fontSize: 12, color: '#6B7B83', marginTop: 4 }}>
+            SHA-256 cryptographically sealed
           </div>
         </div>
       </div>
 
-      {/* Middle Row: Detection Telemetry & Risk Distribution */}
-      <div className="grid-2" style={{ marginBottom: 24 }}>
-        {/* Live Performance Panel */}
+      {/* Main Content Split: Active Rules & Recent Alerts */}
+      <div className="grid-2" style={{ gap: 24 }}>
+        {/* Active Rules Section */}
         <div className="card">
           <div className="card-header">
-            <h3 style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Activity size={16} color="#38BDF8" /> IBM Z Performance & Latency Telemetry
+            <h3 style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#11212D' }}>
+              <ShieldCheck size={16} color="#166534" /> Active Rules Enforced ({active_rules_list.length})
             </h3>
-            <span className="badge badge-info font-mono">SIMULATOR BENCHMARK</span>
+            <button className="btn btn-sm btn-secondary" onClick={() => onNavigate('rules')}>
+              View All Rules
+            </button>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 }}>
-            <div style={{ backgroundColor: '#11212D', padding: 12, borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#9BA8AB' }}>p50 Latency</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#10B981', marginTop: 4 }}>
-                {data.performance_metrics.p50_latency_ms} ms
-              </div>
-              <div style={{ fontSize: 10, color: '#9BA8AB' }}>Telum / Memory</div>
+          {active_rules_list.length === 0 ? (
+            <div style={{ padding: '32px 20px', textAlign: 'center', color: '#6B7B83', fontSize: 13 }}>
+              <div style={{ marginBottom: 6 }}>No active rules configured yet.</div>
+              <div style={{ fontSize: 12, color: '#9BA8AB' }}>Submit a policy to automatically validate and activate runtime rules.</div>
             </div>
-            <div style={{ backgroundColor: '#11212D', padding: 12, borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#9BA8AB' }}>p95 Latency</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: '#38BDF8', marginTop: 4 }}>
-                {data.performance_metrics.p95_latency_ms} ms
-              </div>
-              <div style={{ fontSize: 10, color: '#9BA8AB' }}>SLA &lt; 4 ms</div>
-            </div>
-            <div style={{ backgroundColor: '#11212D', padding: 12, borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#9BA8AB' }}>Throughput</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#CCD0CF', marginTop: 6 }}>
-                &gt;500k/s
-              </div>
-              <div style={{ fontSize: 10, color: '#9BA8AB' }}>zIIP Engine</div>
-            </div>
-          </div>
-
-          <div style={{ borderTop: '1px solid #4A5C6A', paddingTop: 12 }}>
-            <div style={{ fontSize: 12, color: '#9BA8AB', marginBottom: 8 }}>Sensor Health & Connectivity:</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>IBM Z SMF / RACF Adapter</span>
-                <span style={{ color: '#10B981', fontWeight: 600 }}>{data.performance_metrics.sensor_health.ibm_z_smf_adapter}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>AI Gateway & Prompt DLP Sensor</span>
-                <span style={{ color: '#10B981', fontWeight: 600 }}>{data.performance_metrics.sensor_health.ai_gateway_dlp}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Cryptographic SHA-256 Hasher</span>
-                <span style={{ color: '#10B981', fontWeight: 600 }}>{data.performance_metrics.sensor_health.audit_hasher}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Severity Distribution & Attention Items */}
-        <div className="card">
-          <div className="card-header">
-            <h3 style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <AlertTriangle size={16} color="#F59E0B" /> Severity & Compliance Distribution
-            </h3>
-            <span style={{ fontSize: 12, color: '#9BA8AB' }}>Total: {data.violations_detected} detections</span>
-          </div>
-
-          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
-            <div style={{ flex: 1, backgroundColor: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: 12, borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#EF4444', fontWeight: 600 }}>CRITICAL</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#EF4444', marginTop: 4 }}>{data.severity_distribution.CRITICAL}</div>
-            </div>
-            <div style={{ flex: 1, backgroundColor: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: 12, borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#EF4444', fontWeight: 600 }}>HIGH</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#EF4444', marginTop: 4 }}>{data.severity_distribution.HIGH}</div>
-            </div>
-            <div style={{ flex: 1, backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: 12, borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#F59E0B', fontWeight: 600 }}>MEDIUM</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#F59E0B', marginTop: 4 }}>{data.severity_distribution.MEDIUM}</div>
-            </div>
-            <div style={{ flex: 1, backgroundColor: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', padding: 12, borderRadius: 6, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#10B981', fontWeight: 600 }}>LOW</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#10B981', marginTop: 4 }}>{data.severity_distribution.LOW}</div>
-            </div>
-          </div>
-
-          <div style={{ borderTop: '1px solid #4A5C6A', paddingTop: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#CCD0CF', marginBottom: 8 }}>
-              Requires Reviewer Attention:
-            </div>
-            {data.pending_rules_attention.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#10B981' }}>All drafted rules have been reviewed and approved.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {data.pending_rules_attention.map((pr: any) => (
-                  <div
-                    key={pr.rule_id}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      backgroundColor: '#11212D',
-                      padding: '8px 12px',
-                      borderRadius: 4,
-                      fontSize: 12
-                    }}
-                  >
-                    <div>
-                      <strong style={{ color: '#FFFFFF' }}>{pr.rule_name}</strong>
-                      <span style={{ marginLeft: 8, color: '#9BA8AB', fontFamily: 'monospace' }}>{pr.source_clause_id}</span>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {active_rules_list.map((rule) => (
+                <div
+                  key={rule.rule_id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 14px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E6E7',
+                    backgroundColor: '#FAFBFB'
+                  }}
+                >
+                  <div style={{ flex: 1, marginRight: 12 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: '#11212D' }}>
+                      {rule.rule_name}
                     </div>
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => onNavigate('rules')}
-                    >
-                      Inspect <ArrowRight size={12} />
-                    </button>
+                    <div style={{ fontSize: 11, color: '#4A5C6A', marginTop: 3 }}>
+                      Citation: <strong style={{ color: '#253745' }}>{rule.source_clause_id}</strong> • Risk: {rule.risk_level}
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
+
+                  <span className="badge badge-success" style={{ fontSize: 11 }}>Active</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Alerts Section */}
+        <div className="card">
+          <div className="card-header">
+            <h3 style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#11212D' }}>
+              <AlertTriangle size={16} color="#991B1B" /> Recent Detections & Alerts ({recent_alerts.length})
+            </h3>
+            <button className="btn btn-sm btn-secondary" onClick={() => onNavigate('events-alerts')}>
+              View All Alerts
+            </button>
           </div>
-        </div>
-      </div>
 
-      {/* Bottom Row: Recent Security Alerts Table */}
-      <div className="card">
-        <div className="card-header">
-          <h3 style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Server size={16} color="#EF4444" /> Recent Security Alerts & Compliance Violations
-          </h3>
-          <button className="btn btn-sm btn-primary" onClick={() => onNavigate('alerts')}>
-            View All Alerts
-          </button>
-        </div>
-
-        {data.recent_alerts.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 24, color: '#9BA8AB' }}>No active alerts. System baseline is secure.</div>
-        ) : (
-          <div className="table-container">
-            <table>
-              <thead>
-                <tr>
-                  <th>Alert ID</th>
-                  <th>Detection Time</th>
-                  <th>Severity</th>
-                  <th>Event Target</th>
-                  <th>Cited Clause</th>
-                  <th>Explanation</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent_alerts.map((alt: any) => (
-                  <tr key={alt.alert_id}>
-                    <td className="font-mono" style={{ color: '#38BDF8', fontWeight: 600 }}>{alt.alert_id}</td>
-                    <td style={{ fontSize: 12, color: '#9BA8AB' }}>{alt.detection_time.slice(0, 19).replace('T', ' ')}</td>
-                    <td>
-                      <span className={`badge ${alt.severity === 'CRITICAL' || alt.severity === 'HIGH' ? 'badge-danger' : 'badge-warning'}`}>
-                        {alt.severity}
-                      </span>
-                    </td>
-                    <td className="font-mono">{alt.event_id}</td>
-                    <td style={{ color: '#CCD0CF', fontWeight: 600 }}>{alt.cited_clause_id}</td>
-                    <td style={{ maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {alt.explanation}
-                    </td>
-                    <td>
-                      <span className="badge badge-neutral">{alt.investigation_status}</span>
-                    </td>
+          {recent_alerts.length === 0 ? (
+            <div style={{ padding: '32px 20px', textAlign: 'center', color: '#6B7B83', fontSize: 13 }}>
+              <CheckCircle2 size={24} color="#166534" style={{ margin: '0 auto 8px' }} />
+              <div>Zero alerts detected. Workspace is clean and compliant.</div>
+            </div>
+          ) : (
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Alert Description</th>
+                    <th>Severity</th>
+                    <th>Detection Time</th>
+                    <th>Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {recent_alerts.map((alt) => (
+                    <tr key={alt.alert_id}>
+                      <td style={{ fontWeight: 500, color: '#11212D' }}>
+                        {alt.explanation}
+                      </td>
+                      <td>
+                        <span className={`badge ${alt.severity === 'CRITICAL' || alt.severity === 'HIGH' ? 'badge-danger' : 'badge-warning'}`}>
+                          {alt.severity}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 11, color: '#6B7B83' }}>
+                        {alt.detection_time.slice(0, 19).replace('T', ' ')}
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => onInspectAlert(alt.alert_id)}
+                        >
+                          Inspect
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
