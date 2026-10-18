@@ -7,7 +7,8 @@ import {
   RefreshCw,
   Eye,
   Lock,
-  Info
+  Info,
+  Trash2
 } from 'lucide-react';
 import { ProofCardItem, AuditVerification } from '../types';
 
@@ -17,6 +18,8 @@ interface AuditLedgerProps {
   onVerifyLedger: () => Promise<any>;
   onSimulateTamper: (proofId?: string) => Promise<any>;
   onRestoreLedger: () => Promise<any>;
+  onDeleteRecord?: (proofId: string) => Promise<any>;
+  onClearLedger?: () => Promise<any>;
   initialFocusProofId?: string | null;
 }
 
@@ -26,6 +29,8 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
   onVerifyLedger,
   onSimulateTamper,
   onRestoreLedger,
+  onDeleteRecord,
+  onClearLedger,
   initialFocusProofId
 }) => {
   const [selectedProof, setSelectedProof] = useState<ProofCardItem | null>(
@@ -62,6 +67,34 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
       await onVerifyLedger();
     } finally {
       setTamperLoading(false);
+    }
+  };
+
+  const handleClearLedger = async () => {
+    if (!onClearLedger) return;
+    if (!window.confirm(`Are you sure you want to clear all ${ledger.length} records from your company's audit ledger? This will reset your cryptographic ledger back to genesis.`)) {
+      return;
+    }
+    try {
+      await onClearLedger();
+      setSelectedProof(null);
+      await onVerifyLedger();
+    } catch (err: any) {
+      alert(err.message || 'Failed to clear audit ledger.');
+    }
+  };
+
+  const handleDeleteSingleProof = async (proofId: string) => {
+    if (!onDeleteRecord) return;
+    if (!window.confirm(`Are you sure you want to delete audit record ${proofId}?`)) {
+      return;
+    }
+    try {
+      await onDeleteRecord(proofId);
+      setSelectedProof(null);
+      await onVerifyLedger();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete audit record.');
     }
   };
 
@@ -109,6 +142,16 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
                 <RotateCcw size={14} /> Re-Seal Ledger
               </button>
             )
+          )}
+
+          {ledger.length > 0 && onClearLedger && (
+            <button
+              className="btn btn-danger"
+              onClick={handleClearLedger}
+              title="Clear all records from audit ledger"
+            >
+              <Trash2 size={14} /> Clear Ledger
+            </button>
           )}
         </div>
       </div>
@@ -228,6 +271,16 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
                             Tamper
                           </button>
                         )}
+                        {onDeleteRecord && (
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => handleDeleteSingleProof(item.proof_id)}
+                            style={{ padding: '4px 8px' }}
+                            title="Delete this audit record"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -294,7 +347,18 @@ export const AuditLedger: React.FC<AuditLedgerProps> = ({
               </div>
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                {onDeleteRecord && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={() => handleDeleteSingleProof(selectedProof.proof_id)}
+                  >
+                    <Trash2 size={13} /> Delete Record
+                  </button>
+                )}
+              </div>
               <button type="button" className="btn btn-secondary" onClick={() => setSelectedProof(null)}>
                 Close
               </button>

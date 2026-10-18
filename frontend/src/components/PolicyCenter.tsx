@@ -16,6 +16,7 @@ interface PolicyCenterProps {
   policies: Policy[];
   onSubmitPolicy: (data: { title: string; industry: string; text: string }) => Promise<any>;
   onDeletePolicy: (policyId: string) => Promise<any>;
+  onDeleteAllPolicies?: () => Promise<any>;
   onNavigateToRules: () => void;
   currentIndustry: string;
 }
@@ -24,6 +25,7 @@ export const PolicyCenter: React.FC<PolicyCenterProps> = ({
   policies,
   onSubmitPolicy,
   onDeletePolicy,
+  onDeleteAllPolicies,
   onNavigateToRules,
   currentIndustry
 }) => {
@@ -66,6 +68,18 @@ export const PolicyCenter: React.FC<PolicyCenterProps> = ({
       alert(err.message || 'Failed to delete policy.');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!onDeleteAllPolicies) return;
+    if (!window.confirm(`Are you sure you want to delete all ${policies.length} policies? All associated runtime rules will also be removed.`)) {
+      return;
+    }
+    try {
+      await onDeleteAllPolicies();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete policies.');
     }
   };
 
@@ -278,7 +292,19 @@ export const PolicyCenter: React.FC<PolicyCenterProps> = ({
       <div className="card">
         <div className="card-header">
           <h3 style={{ fontSize: 15, color: '#11212D' }}>Configured Policies ({policies.length})</h3>
-          <span style={{ fontSize: 12, color: '#6B7B83' }}>Company Workspace Isolated</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {policies.length > 0 && onDeleteAllPolicies && (
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={handleDeleteAll}
+                style={{ fontSize: 11, padding: '4px 10px' }}
+                title="Delete all policies and associated rules"
+              >
+                <Trash2 size={12} /> Clear All Policies
+              </button>
+            )}
+            <span style={{ fontSize: 12, color: '#6B7B83' }}>Company Workspace Isolated</span>
+          </div>
         </div>
 
         {policies.length === 0 ? (

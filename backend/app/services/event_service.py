@@ -506,3 +506,40 @@ def ingest_and_evaluate_event(event_data: Dict[str, Any], company_id: str) -> Di
 
     eval_result["proof_id"] = proof_id
     return eval_result
+
+def delete_event_service(event_id: str, company_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM events WHERE event_id = ? AND company_id = ?", (event_id, company_id))
+    affected = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return affected
+
+def delete_all_events_service(company_id: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM events WHERE company_id = ?", (company_id,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected
+
+def delete_alert_service(alert_id: str, company_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alerts WHERE alert_id = ? AND company_id = ?", (alert_id, company_id))
+    affected = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return affected
+
+def delete_all_alerts_service(company_id: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM alerts WHERE company_id = ?", (company_id,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected
+

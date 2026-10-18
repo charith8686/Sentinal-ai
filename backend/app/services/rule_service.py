@@ -74,3 +74,13 @@ def delete_rule_service(rule_id: str, company_id: str) -> bool:
     conn.commit()
     conn.close()
     return affected
+
+def delete_all_rules_service(company_id: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM rules WHERE company_id = ?", (company_id,))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+

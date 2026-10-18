@@ -90,6 +90,9 @@ export const api = {
   deletePolicy: async (policyId: string): Promise<any> => {
     return request(`/policies/${policyId}`, { method: 'DELETE' });
   },
+  deleteAllPolicies: async (): Promise<any> => {
+    return request('/policies', { method: 'DELETE' });
+  },
 
   // Rules
   getRules: async (): Promise<Rule[]> => {
@@ -98,10 +101,19 @@ export const api = {
   deleteRule: async (ruleId: string): Promise<any> => {
     return request(`/rules/${ruleId}`, { method: 'DELETE' });
   },
+  deleteAllRules: async (): Promise<any> => {
+    return request('/rules', { method: 'DELETE' });
+  },
 
   // Events
   getEvents: async (): Promise<EventItem[]> => {
     return request('/events');
+  },
+  deleteEvent: async (eventId: string): Promise<any> => {
+    return request(`/events/${eventId}`, { method: 'DELETE' });
+  },
+  deleteAllEvents: async (): Promise<any> => {
+    return request('/events', { method: 'DELETE' });
   },
   simulateEvent: async (eventData: Partial<EventItem> & { raw_prompt?: string }): Promise<any> => {
     return request('/events/simulate', {
@@ -151,6 +163,12 @@ export const api = {
       body: JSON.stringify(data)
     });
   },
+  deleteAlert: async (alertId: string): Promise<any> => {
+    return request(`/alerts/${alertId}`, { method: 'DELETE' });
+  },
+  deleteAllAlerts: async (): Promise<any> => {
+    return request('/alerts', { method: 'DELETE' });
+  },
 
   // Audit
   getLedger: async (): Promise<ProofCardItem[]> => {
@@ -167,5 +185,17 @@ export const api = {
   },
   restoreLedger: async (): Promise<any> => {
     return request('/audit/restore', { method: 'POST' });
+  },
+  deleteAuditRecord: async (proofId: string): Promise<any> => {
+    return request(`/audit/${proofId}`, { method: 'DELETE' });
+  },
+  clearAuditLedger: async (): Promise<any> => {
+    return request('/audit', { method: 'DELETE' });
+  },
+
+  // Master Workspace Reset
+  resetWorkspaceAll: async (): Promise<any> => {
+    return request('/workspace/all', { method: 'DELETE' });
   }
 };
+

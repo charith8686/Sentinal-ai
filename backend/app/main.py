@@ -16,16 +16,18 @@ from app.services.auth_service import (
     register_company, login_company, logout_company, get_company_by_token
 )
 from app.services.policy_service import (
-    create_policy_service, get_all_policies, delete_policy_service
+    create_policy_service, get_all_policies, delete_policy_service, delete_all_policies_service
 )
 from app.services.rule_service import (
-    get_all_rules, get_active_rules, delete_rule_service
+    get_all_rules, get_active_rules, delete_rule_service, delete_all_rules_service
 )
 from app.services.event_service import (
-    import_sample_csv, import_csv_data, get_all_events, ingest_and_evaluate_event
+    import_sample_csv, import_csv_data, get_all_events, ingest_and_evaluate_event,
+    delete_event_service, delete_all_events_service, delete_alert_service, delete_all_alerts_service
 )
 from app.services.audit_service import (
-    get_audit_ledger, verify_ledger_integrity, simulate_tamper, restore_ledger_integrity
+    get_audit_ledger, verify_ledger_integrity, simulate_tamper, restore_ledger_integrity,
+    delete_audit_record_service, clear_audit_ledger_service
 )
 from app.services.alert_service import get_alerts, update_alert_investigation
 from app.services.ai_service import get_ai_provider
@@ -224,6 +226,11 @@ def delete_policy(policy_id: str, company: Dict[str, Any] = Depends(get_current_
         raise HTTPException(status_code=404, detail="Policy not found or unauthorized.")
     return {"status": "success", "message": "Policy and associated rules deleted."}
 
+@app.delete("/api/policies")
+def delete_all_policies_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
+    count = delete_all_policies_service(company["company_id"])
+    return {"status": "success", "message": f"Deleted {count} policies and all associated rules."}
+
 # --- RULES ENDPOINTS (COMPANY ISOLATED) ---
 
 @app.get("/api/rules")
@@ -236,6 +243,11 @@ def delete_rule(rule_id: str, company: Dict[str, Any] = Depends(get_current_comp
     if not success:
         raise HTTPException(status_code=404, detail="Rule not found or unauthorized.")
     return {"status": "success", "message": "Rule removed."}
+
+@app.delete("/api/rules")
+def delete_all_rules_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
+    count = delete_all_rules_service(company["company_id"])
+    return {"status": "success", "message": f"Deleted {count} rules."}
 
 # --- EVENTS & ALERTS ENDPOINTS (COMPANY ISOLATED) ---
 
@@ -304,6 +316,18 @@ def simulate_event(event_in: EventIngest, company: Dict[str, Any] = Depends(get_
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@app.delete("/api/events/{event_id}")
+def delete_single_event(event_id: str, company: Dict[str, Any] = Depends(get_current_company)):
+    success = delete_event_service(event_id, company["company_id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Event not found or unauthorized.")
+    return {"status": "success", "message": "Event deleted."}
+
+@app.delete("/api/events")
+def delete_all_events_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
+    count = delete_all_events_service(company["company_id"])
+    return {"status": "success", "message": f"Deleted {count} events."}
+
 @app.get("/api/alerts")
 def list_alerts(
     severity: Optional[str] = Query(None),
@@ -332,6 +356,18 @@ def update_alert(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
+@app.delete("/api/alerts/{alert_id}")
+def delete_single_alert(alert_id: str, company: Dict[str, Any] = Depends(get_current_company)):
+    success = delete_alert_service(alert_id, company["company_id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found or unauthorized.")
+    return {"status": "success", "message": "Alert deleted."}
+
+@app.delete("/api/alerts")
+def delete_all_alerts_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
+    count = delete_all_alerts_service(company["company_id"])
+    return {"status": "success", "message": f"Deleted {count} alerts."}
+
 # --- AUDIT LEDGER ENDPOINTS (COMPANY ISOLATED) ---
 
 @app.get("/api/audit/ledger")
@@ -356,7 +392,51 @@ def tamper_demo_endpoint(
 def restore_audit_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
     return restore_ledger_integrity(company["company_id"])
 
+@app.delete("/api/audit/{proof_id}")
+def delete_single_audit_record(proof_id: str, company: Dict[str, Any] = Depends(get_current_company)):
+    success = delete_audit_record_service(proof_id, company["company_id"])
+    if not success:
+        raise HTTPException(status_code=404, detail="Audit record not found or unauthorized.")
+    return {"status": "success", "message": "Audit record deleted."}
+
+@app.delete("/api/audit")
+def clear_audit_ledger_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
+    count = clear_audit_ledger_service(company["company_id"])
+    return {"status": "success", "message": f"Cleared {count} audit ledger records."}
+
+# --- MASTER WORKSPACE RESET (DELETE EVERYTHING FOR COMPANY) ---
+
+@app.delete("/api/workspace/all")
+def reset_workspace_all(company: Dict[str, Any] = Depends(get_current_company)):
+    company_id = company["company_id"]
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM policies WHERE company_id = ?", (company_id,))
+    policies_deleted = cursor.rowcount
+    cursor.execute("DELETE FROM rules WHERE company_id = ?", (company_id,))
+    rules_deleted = cursor.rowcount
+    cursor.execute("DELETE FROM events WHERE company_id = ?", (company_id,))
+    events_deleted = cursor.rowcount
+    cursor.execute("DELETE FROM alerts WHERE company_id = ?", (company_id,))
+    alerts_deleted = cursor.rowcount
+    cursor.execute("DELETE FROM audit_ledger WHERE company_id = ?", (company_id,))
+    audit_deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return {
+        "status": "success",
+        "message": "Workspace reset to zero records.",
+        "deleted": {
+            "policies": policies_deleted,
+            "rules": rules_deleted,
+            "events": events_deleted,
+            "alerts": alerts_deleted,
+            "audit_records": audit_deleted
+        }
+    }
+
 # Static frontend serving
 dist_path = os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")
 if os.path.exists(dist_path):
     app.mount("/", StaticFiles(directory=dist_path, html=True), name="static")
+

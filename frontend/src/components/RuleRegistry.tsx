@@ -13,11 +13,13 @@ import { Rule } from '../types';
 interface RuleRegistryProps {
   rules: Rule[];
   onDeleteRule: (ruleId: string) => Promise<any>;
+  onDeleteAllRules?: () => Promise<any>;
 }
 
 export const RuleRegistry: React.FC<RuleRegistryProps> = ({
   rules,
-  onDeleteRule
+  onDeleteRule,
+  onDeleteAllRules
 }) => {
   const [inspectRule, setInspectRule] = useState<Rule | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -36,6 +38,19 @@ export const RuleRegistry: React.FC<RuleRegistryProps> = ({
       alert(err.message || 'Failed to delete rule.');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!onDeleteAllRules) return;
+    if (!window.confirm(`Are you sure you want to remove all ${rules.length} rules from active enforcement?`)) {
+      return;
+    }
+    try {
+      await onDeleteAllRules();
+      setInspectRule(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete rules.');
     }
   };
 
@@ -58,9 +73,21 @@ export const RuleRegistry: React.FC<RuleRegistryProps> = ({
           <h3 style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#11212D' }}>
             <ShieldCheck size={16} color="#166534" /> Active Compliance Rules ({rules.length})
           </h3>
-          <span style={{ fontSize: 12, color: '#6B7B83' }}>
-            Deterministic Runtime Logic
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {rules.length > 0 && onDeleteAllRules && (
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={handleDeleteAll}
+                style={{ fontSize: 11, padding: '4px 10px' }}
+                title="Remove all rules from runtime enforcement"
+              >
+                <Trash2 size={12} /> Clear All Rules
+              </button>
+            )}
+            <span style={{ fontSize: 12, color: '#6B7B83' }}>
+              Deterministic Runtime Logic
+            </span>
+          </div>
         </div>
 
         {rules.length === 0 ? (

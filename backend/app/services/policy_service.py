@@ -286,3 +286,14 @@ def delete_policy_service(policy_id: str, company_id: str) -> bool:
     conn.commit()
     conn.close()
     return True
+
+def delete_all_policies_service(company_id: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM rules WHERE company_id = ?", (company_id,))
+    cursor.execute("DELETE FROM policies WHERE company_id = ?", (company_id,))
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+

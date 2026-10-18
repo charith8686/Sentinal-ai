@@ -140,3 +140,22 @@ def restore_ledger_integrity(company_id: str) -> Dict[str, Any]:
         "latest_hash": prev_hash,
         "message": "Company audit ledger re-sealed with consistent SHA-256 hashes."
     }
+
+def delete_audit_record_service(proof_id: str, company_id: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM audit_ledger WHERE proof_id = ? AND company_id = ?", (proof_id, company_id))
+    affected = cursor.rowcount > 0
+    conn.commit()
+    conn.close()
+    return affected
+
+def clear_audit_ledger_service(company_id: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM audit_ledger WHERE company_id = ?", (company_id,))
+    affected = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return affected
+

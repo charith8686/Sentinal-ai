@@ -6,7 +6,8 @@ import {
   CheckCircle2,
   Clock,
   Send,
-  Play
+  Play,
+  Trash2
 } from 'lucide-react';
 import { EventItem, AlertItem } from '../types';
 
@@ -15,6 +16,10 @@ interface EventsAndAlertsProps {
   alerts: AlertItem[];
   onSimulateEvent: (eventData: any) => Promise<any>;
   onUpdateAlert: (alertId: string, data: { status?: string; assigned_to?: string; new_note?: string }) => Promise<any>;
+  onDeleteEvent?: (eventId: string) => Promise<any>;
+  onDeleteAllEvents?: () => Promise<any>;
+  onDeleteAlert?: (alertId: string) => Promise<any>;
+  onDeleteAllAlerts?: () => Promise<any>;
   onViewProofCard: (proofId: string) => void;
   selectedAlertId?: string | null;
 }
@@ -24,6 +29,10 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
   alerts,
   onSimulateEvent,
   onUpdateAlert,
+  onDeleteEvent,
+  onDeleteAllEvents,
+  onDeleteAlert,
+  onDeleteAllAlerts,
   onViewProofCard,
   selectedAlertId
 }) => {
@@ -109,6 +118,60 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
       setIsUpdating(false);
     }
   };
+
+  const [deletingEventId, setDeletingEventId] = useState<string | null>(null);
+  const [deletingAlertId, setDeletingAlertId] = useState<string | null>(null);
+
+  const handleDeleteSingleAlert = async (alertId: string) => {
+    if (!onDeleteAlert) return;
+    if (!window.confirm(`Are you sure you want to delete alert ${alertId}?`)) return;
+    setDeletingAlertId(alertId);
+    try {
+      await onDeleteAlert(alertId);
+      if (activeAlert?.alert_id === alertId) {
+        setActiveAlert(null);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete alert.');
+    } finally {
+      setDeletingAlertId(null);
+    }
+  };
+
+  const handleDeleteAllAlertsClick = async () => {
+    if (!onDeleteAllAlerts) return;
+    if (!window.confirm(`Are you sure you want to delete all ${alerts.length} security alerts?`)) return;
+    try {
+      await onDeleteAllAlerts();
+      setActiveAlert(null);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete alerts.');
+    }
+  };
+
+  const handleDeleteSingleEvent = async (eventId: string) => {
+    if (!onDeleteEvent) return;
+    if (!window.confirm(`Are you sure you want to delete event ${eventId}?`)) return;
+    setDeletingEventId(eventId);
+    try {
+      await onDeleteEvent(eventId);
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete event.');
+    } finally {
+      setDeletingEventId(null);
+    }
+  };
+
+  const handleDeleteAllEventsClick = async () => {
+    if (!onDeleteAllEvents) return;
+    if (!window.confirm(`Are you sure you want to delete all ${events.length} system events?`)) return;
+    try {
+      await onDeleteAllEvents();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete events.');
+    }
+  };
+
 
   const filteredAlerts = alerts.filter((alt) => {
     if (severityFilter !== 'ALL' && alt.severity !== severityFilter) return false;
@@ -209,8 +272,19 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
               <AlertTriangle size={16} color="#991B1B" /> Detection Alerts ({filteredAlerts.length})
             </h3>
 
-            {/* Filter controls */}
-            <div style={{ display: 'flex', gap: 10 }}>
+            {/* Filter controls & bulk delete */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {alerts.length > 0 && onDeleteAllAlerts && (
+                <button
+                  className="btn btn-sm btn-danger"
+                  onClick={handleDeleteAllAlertsClick}
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                  title="Delete all security alerts"
+                >
+                  <Trash2 size={12} /> Clear All Alerts
+                </button>
+              )}
+
               <select
                 value={severityFilter}
                 onChange={(e) => setSeverityFilter(e.target.value)}
@@ -253,7 +327,7 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
                     <th>Citation</th>
                     <th>Assignee</th>
                     <th>Status</th>
-                    <th>Action</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -280,15 +354,28 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
                         </span>
                       </td>
                       <td>
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => {
-                            setActiveAlert(alt);
-                            setAssignedToInput(alt.assigned_to || '');
-                          }}
-                        >
-                          Inspect Case
-                        </button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => {
+                              setActiveAlert(alt);
+                              setAssignedToInput(alt.assigned_to || '');
+                            }}
+                          >
+                            Inspect Case
+                          </button>
+                          {onDeleteAlert && (
+                            <button
+                              className="btn btn-sm btn-danger"
+                              onClick={() => handleDeleteSingleAlert(alt.alert_id)}
+                              disabled={deletingAlertId === alt.alert_id}
+                              style={{ padding: '4px 8px' }}
+                              title="Delete alert"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -306,7 +393,19 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
             <h3 style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#11212D' }}>
               <Server size={16} color="#4A5C6A" /> Evaluated System Events ({events.length})
             </h3>
-            <span style={{ fontSize: 12, color: '#6B7B83' }}>Company Stream</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {events.length > 0 && onDeleteAllEvents && (
+                <button
+                  className="btn btn-sm btn-danger"
+                  onClick={handleDeleteAllEventsClick}
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                  title="Clear all system events"
+                >
+                  <Trash2 size={12} /> Clear All Events
+                </button>
+              )}
+              <span style={{ fontSize: 12, color: '#6B7B83' }}>Company Stream</span>
+            </div>
           </div>
 
           {events.length === 0 ? (
@@ -327,6 +426,7 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
                     <th>Sensitive Data?</th>
                     <th>Authorized?</th>
                     <th>Details</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -356,6 +456,19 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
                       </td>
                       <td style={{ fontSize: 12, maxWidth: 300, color: '#4A5C6A' }}>
                         {ev.activity_details}
+                      </td>
+                      <td>
+                        {onDeleteEvent && (
+                          <button
+                            className="btn btn-sm btn-danger"
+                            onClick={() => handleDeleteSingleEvent(ev.event_id)}
+                            disabled={deletingEventId === ev.event_id}
+                            style={{ padding: '4px 8px' }}
+                            title="Delete event"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -466,18 +579,32 @@ export const EventsAndAlerts: React.FC<EventsAndAlertsProps> = ({
               </div>
             </div>
 
-            <div className="modal-footer">
-              <button type="button" className="btn btn-secondary" onClick={() => setActiveAlert(null)}>
-                Close
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={isUpdating || activeAlert.investigation_status === 'RESOLVED'}
-                onClick={() => handleSaveInvestigation('RESOLVED')}
-              >
-                <CheckCircle2 size={14} /> Close & Mark Case Resolved
-              </button>
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                {onDeleteAlert && (
+                  <button
+                    type="button"
+                    className="btn btn-danger"
+                    onClick={() => handleDeleteSingleAlert(activeAlert.alert_id)}
+                    disabled={deletingAlertId === activeAlert.alert_id}
+                  >
+                    <Trash2 size={13} /> Delete Alert
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setActiveAlert(null)}>
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isUpdating || activeAlert.investigation_status === 'RESOLVED'}
+                  onClick={() => handleSaveInvestigation('RESOLVED')}
+                >
+                  <CheckCircle2 size={14} /> Close & Mark Case Resolved
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -105,11 +105,66 @@ export function App() {
     return res;
   };
 
+  const handleDeleteAllPolicies = async () => {
+    const res = await api.deleteAllPolicies();
+    await loadAllData();
+    return res;
+  };
+
   const handleDeleteRule = async (ruleId: string) => {
     const res = await api.deleteRule(ruleId);
     await loadAllData();
     return res;
   };
+
+  const handleDeleteAllRules = async () => {
+    const res = await api.deleteAllRules();
+    await loadAllData();
+    return res;
+  };
+
+  const handleDeleteEvent = async (eventId: string) => {
+    const res = await api.deleteEvent(eventId);
+    await loadAllData();
+    return res;
+  };
+
+  const handleDeleteAllEvents = async () => {
+    const res = await api.deleteAllEvents();
+    await loadAllData();
+    return res;
+  };
+
+  const handleDeleteAlert = async (alertId: string) => {
+    const res = await api.deleteAlert(alertId);
+    await loadAllData();
+    return res;
+  };
+
+  const handleDeleteAllAlerts = async () => {
+    const res = await api.deleteAllAlerts();
+    await loadAllData();
+    return res;
+  };
+
+  const handleDeleteAuditRecord = async (proofId: string) => {
+    const res = await api.deleteAuditRecord(proofId);
+    await loadAllData();
+    return res;
+  };
+
+  const handleClearAuditLedger = async () => {
+    const res = await api.clearAuditLedger();
+    await loadAllData();
+    return res;
+  };
+
+  const handleResetWorkspaceAll = async () => {
+    const res = await api.resetWorkspaceAll();
+    await loadAllData();
+    return res;
+  };
+
 
   const handleSimulateEvent = async (eventData: any) => {
     const res = await api.simulateEvent(eventData);
@@ -216,6 +271,7 @@ export function App() {
               policies={policies}
               onSubmitPolicy={handleSubmitPolicy}
               onDeletePolicy={handleDeletePolicy}
+              onDeleteAllPolicies={handleDeleteAllPolicies}
               onNavigateToRules={() => setActiveTab('rules')}
               currentIndustry={company?.industry || 'Banking'}
             />
@@ -225,6 +281,7 @@ export function App() {
             <RuleRegistry
               rules={rules}
               onDeleteRule={handleDeleteRule}
+              onDeleteAllRules={handleDeleteAllRules}
             />
           )}
 
@@ -234,6 +291,10 @@ export function App() {
               alerts={alerts}
               onSimulateEvent={handleSimulateEvent}
               onUpdateAlert={handleUpdateAlert}
+              onDeleteEvent={handleDeleteEvent}
+              onDeleteAllEvents={handleDeleteAllEvents}
+              onDeleteAlert={handleDeleteAlert}
+              onDeleteAllAlerts={handleDeleteAllAlerts}
               onViewProofCard={navigateToProofCard}
               selectedAlertId={focusedAlertId}
             />
@@ -246,6 +307,8 @@ export function App() {
               onVerifyLedger={handleVerifyLedger}
               onSimulateTamper={handleSimulateTamper}
               onRestoreLedger={handleRestoreLedger}
+              onDeleteRecord={handleDeleteAuditRecord}
+              onClearLedger={handleClearAuditLedger}
               initialFocusProofId={focusedProofId}
             />
           )}
@@ -254,6 +317,7 @@ export function App() {
             <SettingsIndustry
               health={health}
               onImportCsv={handleImportCsv}
+              onResetWorkspace={handleResetWorkspaceAll}
             />
           )}
         </main>

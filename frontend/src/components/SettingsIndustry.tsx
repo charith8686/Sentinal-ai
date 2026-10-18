@@ -16,11 +16,13 @@ import { api } from '../api';
 interface SettingsIndustryProps {
   health: SystemHealth | null;
   onImportCsv: (file: File) => Promise<any>;
+  onResetWorkspace?: () => Promise<any>;
 }
 
 export const SettingsIndustry: React.FC<SettingsIndustryProps> = ({
   health,
-  onImportCsv
+  onImportCsv,
+  onResetWorkspace
 }) => {
   const [aiStatus, setAiStatus] = useState<any>(null);
   const [checkingAi, setCheckingAi] = useState(false);
@@ -28,6 +30,8 @@ export const SettingsIndustry: React.FC<SettingsIndustryProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [resetStatus, setResetStatus] = useState<string | null>(null);
+  const [resetting, setResetting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -43,6 +47,32 @@ export const SettingsIndustry: React.FC<SettingsIndustryProps> = ({
       setAiStatus({ connected: false, message: err.message || 'Connection test failed.' });
     } finally {
       setCheckingAi(false);
+    }
+  };
+
+  const handleResetWorkspace = async () => {
+    if (!onResetWorkspace) return;
+    if (!window.confirm(
+      'WARNING: This will permanently delete ALL of your company\'s policies, rules, events, alerts, and audit records. This action cannot be undone. Type "RESET" to confirm, then click OK.'
+    )) return;
+    const confirmation = window.prompt('Type RESET to confirm complete workspace reset:');
+    if (confirmation !== 'RESET') {
+      alert('Reset cancelled — confirmation text did not match.');
+      return;
+    }
+    setResetting(true);
+    setResetStatus(null);
+    try {
+      const res = await onResetWorkspace();
+      const d = res.deleted || {};
+      setResetStatus(
+        `Workspace reset complete. Deleted: ${d.policies ?? 0} policies, ${d.rules ?? 0} rules, ${d.events ?? 0} events, ${d.alerts ?? 0} alerts, ${d.audit_records ?? 0} audit records.`
+      );
+      setTimeout(() => setResetStatus(null), 10000);
+    } catch (err: any) {
+      alert(err.message || 'Failed to reset workspace.');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -330,6 +360,43 @@ export const SettingsIndustry: React.FC<SettingsIndustryProps> = ({
           Server event integration supports Linux system security logs (Auditd, Syslog) and IBM Z SMF/RACF log formats.
         </p>
       </div>
+
+      {/* 4. Danger Zone — Workspace Reset */}
+      {onResetWorkspace && (
+        <div className="card" style={{ border: '1px solid #FECACA', backgroundColor: '#FFF5F5' }}>
+          <div className="card-header" style={{ borderBottom: '1px solid #FECACA' }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#991B1B', margin: 0 }}>
+              ⚠ Danger Zone
+            </h3>
+          </div>
+          <div style={{ padding: '16px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#11212D', marginBottom: 4 }}>
+                  Reset Entire Workspace
+                </div>
+                <div style={{ fontSize: 12, color: '#6B7B83' }}>
+                  Permanently deletes all policies, rules, events, alerts, and audit records for your company. This cannot be undone.
+                </div>
+              </div>
+              <button
+                className="btn btn-danger"
+                onClick={handleResetWorkspace}
+                disabled={resetting}
+                style={{ marginLeft: 20, whiteSpace: 'nowrap', flexShrink: 0 }}
+              >
+                {resetting ? 'Resetting...' : '🗑 Reset Workspace'}
+              </button>
+            </div>
+            {resetStatus && (
+              <div style={{ marginTop: 12, padding: '10px 14px', backgroundColor: '#D1FAE5', borderRadius: 6, fontSize: 12, color: '#166534', border: '1px solid #A7F3D0' }}>
+                ✓ {resetStatus}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
