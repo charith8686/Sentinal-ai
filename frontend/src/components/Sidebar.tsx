@@ -15,6 +15,7 @@ interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   openAlertsCount: number;
+  pendingRulesCount?: number;
   company: CompanyProfile | null;
   onLogout: () => void;
 }
@@ -23,13 +24,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   setActiveTab,
   openAlertsCount,
+  pendingRulesCount = 0,
   company,
   onLogout
 }) => {
   const menuItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'policies', label: 'Policies', icon: FileText },
-    { id: 'rules', label: 'Rules', icon: ShieldCheck },
+    {
+      id: 'rules',
+      label: 'Rules',
+      icon: ShieldCheck,
+      badge: pendingRulesCount > 0 ? `${pendingRulesCount}` : null,
+      badgeType: 'warning'
+    },
     {
       id: 'events-alerts',
       label: 'Events & Alerts',
@@ -100,7 +108,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Icon size={16} color={isActive ? '#FFFFFF' : '#9BA8AB'} />
               <span style={{ flex: 1 }}>{item.label}</span>
               {item.badge && (
-                <span className="badge badge-danger" style={{ fontSize: 10, padding: '1px 6px' }}>
+                <span
+                  className={item.badgeType === 'warning' ? 'badge badge-warning' : 'badge badge-danger'}
+                  style={{
+                    fontSize: 10,
+                    padding: '1px 6px',
+                    ...(item.badgeType === 'warning' ? { backgroundColor: '#F59E0B', color: '#11212D', border: 'none', fontWeight: 700 } : {})
+                  }}
+                >
                   {item.badge}
                 </span>
               )}

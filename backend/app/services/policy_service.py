@@ -7,6 +7,7 @@ from app.database.db import get_connection
 from app.config import settings
 from app.services.ai_service import get_ai_provider, _local_rule_extraction_fallback
 from app.services.rule_validator import validate_and_test_rule
+from app.services.audit_service import append_audit_record
 
 CLAUSES_FILE = os.path.join(os.path.dirname(__file__), "..", "data", "legal_clauses.json")
 
@@ -195,9 +196,10 @@ async def create_policy_service(title: str, industry: str, text: str, company_id
 
     # AUTOMATIC VALIDATION & TESTING PIPELINE
     validation = validate_and_test_rule(rule_draft, company_id)
-    rule_status = validation["status"] # "ACTIVE" if passed, "REJECTED" if failed
     validation_status = "VALIDATED" if validation["passed"] else "REJECTED"
     validation_message = validation["message"]
+    # Human approval requirement: Valid rules require human review and start as PENDING_APPROVAL
+    rule_status = "PENDING_APPROVAL" if validation["passed"] else "REJECTED"
 
     # Persist policy
     cursor.execute("""
@@ -208,7 +210,7 @@ async def create_policy_service(title: str, industry: str, text: str, company_id
         json.dumps(retrieved_clauses), None, "[]", now
     ))
 
-    # Persist rule with automated activation status
+    # Persist rule with PENDING_APPROVAL status (no auto-activation)
     cursor.execute("""
         INSERT INTO rules (
             rule_id, company_id, rule_name, source_policy_id, source_clause_id,
@@ -219,18 +221,47 @@ async def create_policy_service(title: str, industry: str, text: str, company_id
     """, (
         rule_id, company_id, rule_name, policy_id, source_clause_id,
         supporting_clause_text, json.dumps(conditions), classification, recommended_action,
-        risk_level, explanation, "1.0", rule_status, "Automated Verification", now,
+        risk_level, explanation, "1.0", rule_status, None, None,
         validation_message, 0, 0, validation_status, validation_message, now, now
     ))
+
+    # Record rule creation in rule_history
+    cursor.execute("""
+        INSERT INTO rule_history (
+            company_id, rule_id, version, action, actor_id, actor_name,
+            status, validation_status, validation_message, comment, timestamp, rule_snapshot_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        company_id, rule_id, "1.0", "CREATED", company_id, "AI Policy Generator",
+        rule_status, validation_status, validation_message, "Rule generated and validated. Pending company approval.", now,
+        json.dumps(rule_draft)
+    ))
+
+    # Append immutable cryptographic audit evidence
+    append_audit_record(
+        company_id=company_id,
+        event_id=rule_id,
+        rule_id=rule_id,
+        rule_version="1.0",
+        policy_id=policy_id,
+        policy_version="1.0",
+        cited_clause_id=source_clause_id,
+        classification="RULE_CREATED",
+        recommended_action="PENDING_APPROVAL" if validation["passed"] else "VALIDATION_FAILED",
+        approver_id="AI Policy Generator",
+        approval_time=now,
+        cursor=cursor
+    )
 
     conn.commit()
     conn.close()
 
     rule_draft["status"] = rule_status
-    rule_draft["approver"] = "Automated Verification"
-    rule_draft["approval_time"] = now
+    rule_draft["approver"] = None
+    rule_draft["approval_time"] = None
     rule_draft["validation_status"] = validation_status
     rule_draft["validation_message"] = validation_message
+
 
     return {
         "policy": {

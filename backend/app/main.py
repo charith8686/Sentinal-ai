@@ -19,7 +19,8 @@ from app.services.policy_service import (
     create_policy_service, get_all_policies, delete_policy_service, delete_all_policies_service
 )
 from app.services.rule_service import (
-    get_all_rules, get_active_rules, delete_rule_service, delete_all_rules_service
+    get_all_rules, get_active_rules, delete_rule_service, delete_all_rules_service,
+    approve_rule_service, reject_rule_service, update_rule_service, get_rule_history_service
 )
 from app.services.event_service import (
     import_sample_csv, import_csv_data, get_all_events, ingest_and_evaluate_event,
@@ -147,6 +148,9 @@ def get_dashboard_overview(company: Dict[str, Any] = Depends(get_current_company
     cursor.execute("SELECT COUNT(*) as count FROM rules WHERE company_id = ? AND status = 'ACTIVE'", (company_id,))
     active_rules = cursor.fetchone()["count"]
 
+    cursor.execute("SELECT COUNT(*) as count FROM rules WHERE company_id = ? AND status = 'PENDING_APPROVAL'", (company_id,))
+    pending_rules = cursor.fetchone()["count"]
+
     cursor.execute("SELECT COUNT(*) as count FROM alerts WHERE company_id = ? AND investigation_status != 'RESOLVED'", (company_id,))
     open_alerts = cursor.fetchone()["count"]
 
@@ -189,6 +193,7 @@ def get_dashboard_overview(company: Dict[str, Any] = Depends(get_current_company
         "metrics": {
             "policies": total_policies,
             "active_rules": active_rules,
+            "pending_rules": pending_rules,
             "open_alerts": open_alerts,
             "audit_records": total_audit_records
         },
@@ -236,6 +241,70 @@ def delete_all_policies_endpoint(company: Dict[str, Any] = Depends(get_current_c
 @app.get("/api/rules")
 def list_rules(company: Dict[str, Any] = Depends(get_current_company)):
     return get_all_rules(company["company_id"])
+
+@app.post("/api/rules/{rule_id}/approve")
+def approve_rule_endpoint(
+    rule_id: str,
+    payload: Optional[Dict[str, Any]] = Body(default={}),
+    company: Dict[str, Any] = Depends(get_current_company)
+):
+    try:
+        review_comment = payload.get("review_comment") if payload else None
+        actor_name = f"{company['name']} ({company['email']})"
+        return approve_rule_service(
+            rule_id=rule_id,
+            company_id=company["company_id"],
+            actor_id=company["company_id"],
+            actor_name=actor_name,
+            review_comment=review_comment
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/rules/{rule_id}/reject")
+def reject_rule_endpoint(
+    rule_id: str,
+    payload: Optional[Dict[str, Any]] = Body(default={}),
+    company: Dict[str, Any] = Depends(get_current_company)
+):
+    try:
+        review_comment = payload.get("review_comment") if payload else None
+        actor_name = f"{company['name']} ({company['email']})"
+        return reject_rule_service(
+            rule_id=rule_id,
+            company_id=company["company_id"],
+            actor_id=company["company_id"],
+            actor_name=actor_name,
+            review_comment=review_comment
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/rules/{rule_id}")
+@app.patch("/api/rules/{rule_id}")
+def update_rule_endpoint(
+    rule_id: str,
+    updates: Dict[str, Any] = Body(...),
+    company: Dict[str, Any] = Depends(get_current_company)
+):
+    try:
+        actor_name = f"{company['name']} ({company['email']})"
+        return update_rule_service(
+            rule_id=rule_id,
+            company_id=company["company_id"],
+            actor_id=company["company_id"],
+            actor_name=actor_name,
+            updates=updates
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/rules/{rule_id}/history")
+def get_rule_history_endpoint(
+    rule_id: str,
+    company: Dict[str, Any] = Depends(get_current_company)
+):
+    return get_rule_history_service(rule_id, company["company_id"])
 
 @app.delete("/api/rules/{rule_id}")
 def delete_rule(rule_id: str, company: Dict[str, Any] = Depends(get_current_company)):
@@ -318,15 +387,17 @@ def simulate_event(event_in: EventIngest, company: Dict[str, Any] = Depends(get_
 
 @app.delete("/api/events/{event_id}")
 def delete_single_event(event_id: str, company: Dict[str, Any] = Depends(get_current_company)):
-    success = delete_event_service(event_id, company["company_id"])
+    actor_name = f"{company['name']} ({company['email']})"
+    success = delete_event_service(event_id, company["company_id"], actor_name=actor_name)
     if not success:
         raise HTTPException(status_code=404, detail="Event not found or unauthorized.")
-    return {"status": "success", "message": "Event deleted."}
+    return {"status": "success", "message": "Event deleted and logged in audit ledger."}
 
 @app.delete("/api/events")
 def delete_all_events_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
-    count = delete_all_events_service(company["company_id"])
-    return {"status": "success", "message": f"Deleted {count} events."}
+    actor_name = f"{company['name']} ({company['email']})"
+    count = delete_all_events_service(company["company_id"], actor_name=actor_name)
+    return {"status": "success", "message": f"Deleted {count} events and logged in audit ledger."}
 
 @app.get("/api/alerts")
 def list_alerts(
@@ -358,15 +429,17 @@ def update_alert(
 
 @app.delete("/api/alerts/{alert_id}")
 def delete_single_alert(alert_id: str, company: Dict[str, Any] = Depends(get_current_company)):
-    success = delete_alert_service(alert_id, company["company_id"])
+    actor_name = f"{company['name']} ({company['email']})"
+    success = delete_alert_service(alert_id, company["company_id"], actor_name=actor_name)
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found or unauthorized.")
-    return {"status": "success", "message": "Alert deleted."}
+    return {"status": "success", "message": "Alert deleted and logged in audit ledger."}
 
 @app.delete("/api/alerts")
 def delete_all_alerts_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
-    count = delete_all_alerts_service(company["company_id"])
-    return {"status": "success", "message": f"Deleted {count} alerts."}
+    actor_name = f"{company['name']} ({company['email']})"
+    count = delete_all_alerts_service(company["company_id"], actor_name=actor_name)
+    return {"status": "success", "message": f"Deleted {count} alerts and logged in audit ledger."}
 
 # --- AUDIT LEDGER ENDPOINTS (COMPANY ISOLATED) ---
 
@@ -392,17 +465,20 @@ def tamper_demo_endpoint(
 def restore_audit_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
     return restore_ledger_integrity(company["company_id"])
 
+@app.delete("/api/audit")
+@app.delete("/api/audit/ledger")
+def clear_audit_ledger_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
+    count = clear_audit_ledger_service(company["company_id"])
+    return {"status": "success", "message": f"Cleared {count} audit ledger records."}
+
 @app.delete("/api/audit/{proof_id}")
 def delete_single_audit_record(proof_id: str, company: Dict[str, Any] = Depends(get_current_company)):
     success = delete_audit_record_service(proof_id, company["company_id"])
     if not success:
         raise HTTPException(status_code=404, detail="Audit record not found or unauthorized.")
-    return {"status": "success", "message": "Audit record deleted."}
+    return {"status": "success", "message": "Audit record deleted and remaining ledger re-sealed."}
 
-@app.delete("/api/audit")
-def clear_audit_ledger_endpoint(company: Dict[str, Any] = Depends(get_current_company)):
-    count = clear_audit_ledger_service(company["company_id"])
-    return {"status": "success", "message": f"Cleared {count} audit ledger records."}
+
 
 # --- MASTER WORKSPACE RESET (DELETE EVERYTHING FOR COMPANY) ---
 

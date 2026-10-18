@@ -8,7 +8,8 @@ import {
   Trash2,
   ArrowRight,
   ShieldAlert,
-  ShieldCheck
+  ShieldCheck,
+  Clock
 } from 'lucide-react';
 import { Policy } from '../types';
 
@@ -217,15 +218,17 @@ export const PolicyCenter: React.FC<PolicyCenterProps> = ({
               </div>
             </div>
           ) : (
-            <div className="card" style={{ border: '1px solid #BBF7D0', backgroundColor: '#F0FDF4' }}>
+            <div className="card" style={{ border: '1px solid #FDE68A', backgroundColor: '#FFFBEB' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <CheckCircle2 size={18} color="#166534" />
-                  <h3 style={{ fontSize: 15, color: '#166534', margin: 0 }}>
-                    AI Analysis Complete — Rule Automatically Validated & Activated
+                  <Clock size={18} color="#92400E" />
+                  <h3 style={{ fontSize: 15, color: '#92400E', margin: 0 }}>
+                    AI Analysis Complete — Rule Formulated &amp; Validated (Pending Human Approval)
                   </h3>
                 </div>
-                <span className="badge badge-success">Active in Runtime Engine</span>
+                <span className="badge badge-warning" style={{ backgroundColor: '#FEF3C7', color: '#92400E', border: '1px solid #FDE68A' }}>
+                  Pending Human Approval
+                </span>
               </div>
 
               <div className="grid-2" style={{ gap: 16, marginBottom: 16 }}>
@@ -243,7 +246,7 @@ export const PolicyCenter: React.FC<PolicyCenterProps> = ({
 
                 <div style={{ backgroundColor: '#FFFFFF', padding: 14, borderRadius: 6, border: '1px solid #DDE2E3' }}>
                   <div style={{ fontSize: 11, color: '#4A5C6A', fontWeight: 600, textTransform: 'uppercase', marginBottom: 4 }}>
-                    Deterministic Logic Enforced
+                    Deterministic Logic Proposed
                   </div>
                   <div className="font-mono" style={{ fontSize: 12, color: '#253745', display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <div><strong>IF:</strong></div>
@@ -270,7 +273,7 @@ export const PolicyCenter: React.FC<PolicyCenterProps> = ({
                     {lastResult.proposed_rule.explanation}
                   </p>
                   <div style={{ marginTop: 8, fontSize: 11, color: '#9BA8AB' }}>
-                    Analysis by IBM watsonx.ai · {lastResult.proposed_rule.ai_provider || 'Granite 4'} · Rule auto-validated &amp; activated
+                    Analysis by IBM watsonx.ai · {lastResult.proposed_rule.ai_provider || 'Granite 4'} · Deterministically validated · Awaiting company review
                   </div>
                 </div>
               )}
@@ -280,7 +283,7 @@ export const PolicyCenter: React.FC<PolicyCenterProps> = ({
                   className="btn btn-primary"
                   onClick={onNavigateToRules}
                 >
-                  View in Rules Registry <ArrowRight size={13} />
+                  Review &amp; Approve in Rules Registry <ArrowRight size={13} />
                 </button>
               </div>
             </div>

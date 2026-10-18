@@ -16,6 +16,7 @@ from app.engine.hash_chain import (
     GENESIS_HASH
 )
 from app.services.rule_service import get_active_rules
+from app.services.audit_service import append_audit_record
 
 CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "ibm_z_sentinel_ai_sample_events.csv")
 
@@ -507,39 +508,124 @@ def ingest_and_evaluate_event(event_data: Dict[str, Any], company_id: str) -> Di
     eval_result["proof_id"] = proof_id
     return eval_result
 
-def delete_event_service(event_id: str, company_id: str) -> bool:
+def delete_event_service(event_id: str, company_id: str, actor_name: str = "Authorized Company User") -> bool:
     conn = get_connection()
     cursor = conn.cursor()
+    cursor.execute("SELECT event_id FROM events WHERE event_id = ? AND company_id = ?", (event_id, company_id))
+    if not cursor.fetchone():
+        conn.close()
+        return False
+    
+    # 1. Safely delete associated alerts in this transaction
+    cursor.execute("DELETE FROM alerts WHERE event_id = ? AND company_id = ?", (event_id, company_id))
+    
+    # 2. Delete the event from active events
     cursor.execute("DELETE FROM events WHERE event_id = ? AND company_id = ?", (event_id, company_id))
-    affected = cursor.rowcount > 0
+    
+    # 3. Append-only safety: preserve historical proof cards and record deletion as a new audit event
+    append_audit_record(
+        company_id=company_id,
+        event_id=event_id,
+        rule_id="DATA_RETENTION",
+        rule_version="1.0",
+        policy_id="RETENTION_POLICY",
+        policy_version="1.0",
+        cited_clause_id="Event Deletion Record",
+        classification="EVENT_DELETED",
+        recommended_action="RECORD_PURGED",
+        approver_id=actor_name,
+        cursor=cursor
+    )
+    
     conn.commit()
     conn.close()
-    return affected
+    return True
 
-def delete_all_events_service(company_id: str) -> int:
+def delete_all_events_service(company_id: str, actor_name: str = "Authorized Company User") -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM events WHERE company_id = ?", (company_id,))
-    affected = cursor.rowcount
+    cursor.execute("SELECT COUNT(*) as count FROM events WHERE company_id = ?", (company_id,))
+    total = cursor.fetchone()["count"]
+    
+    if total > 0:
+        cursor.execute("DELETE FROM alerts WHERE company_id = ?", (company_id,))
+        cursor.execute("DELETE FROM events WHERE company_id = ?", (company_id,))
+        
+        # Append-only audit record for bulk deletion
+        append_audit_record(
+            company_id=company_id,
+            event_id="ALL_EVENTS",
+            rule_id="DATA_RETENTION",
+            rule_version="1.0",
+            policy_id="RETENTION_POLICY",
+            policy_version="1.0",
+            cited_clause_id="Bulk Events Purge",
+            classification="BULK_EVENTS_CLEARED",
+            recommended_action=f"PURGED_{total}_EVENTS",
+            approver_id=actor_name,
+            cursor=cursor
+        )
+    
     conn.commit()
     conn.close()
-    return affected
+    return total
 
-def delete_alert_service(alert_id: str, company_id: str) -> bool:
+def delete_alert_service(alert_id: str, company_id: str, actor_name: str = "Authorized Company User") -> bool:
     conn = get_connection()
     cursor = conn.cursor()
+    cursor.execute("SELECT alert_id, event_id FROM alerts WHERE alert_id = ? AND company_id = ?", (alert_id, company_id))
+    alert_row = cursor.fetchone()
+    if not alert_row:
+        conn.close()
+        return False
+    
     cursor.execute("DELETE FROM alerts WHERE alert_id = ? AND company_id = ?", (alert_id, company_id))
-    affected = cursor.rowcount > 0
+    
+    # Append-only safety: record alert deletion as an audit event
+    append_audit_record(
+        company_id=company_id,
+        event_id=alert_row["event_id"] or alert_id,
+        rule_id="ALERT_DISMISSAL",
+        rule_version="1.0",
+        policy_id="ALERT_MANAGEMENT",
+        policy_version="1.0",
+        cited_clause_id="Alert Deletion Record",
+        classification="ALERT_DELETED",
+        recommended_action=f"DELETED_{alert_id}",
+        approver_id=actor_name,
+        cursor=cursor
+    )
+    
     conn.commit()
     conn.close()
-    return affected
+    return True
 
-def delete_all_alerts_service(company_id: str) -> int:
+def delete_all_alerts_service(company_id: str, actor_name: str = "Authorized Company User") -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM alerts WHERE company_id = ?", (company_id,))
-    affected = cursor.rowcount
+    cursor.execute("SELECT COUNT(*) as count FROM alerts WHERE company_id = ?", (company_id,))
+    total = cursor.fetchone()["count"]
+    
+    if total > 0:
+        cursor.execute("DELETE FROM alerts WHERE company_id = ?", (company_id,))
+        
+        # Append-only safety: record bulk alert deletion as an audit event
+        append_audit_record(
+            company_id=company_id,
+            event_id="ALL_ALERTS",
+            rule_id="ALERT_DISMISSAL",
+            rule_version="1.0",
+            policy_id="ALERT_MANAGEMENT",
+            policy_version="1.0",
+            cited_clause_id="Bulk Alert Purge",
+            classification="BULK_ALERTS_CLEARED",
+            recommended_action=f"PURGED_{total}_ALERTS",
+            approver_id=actor_name,
+            cursor=cursor
+        )
+    
     conn.commit()
     conn.close()
-    return affected
+    return total
+
 

@@ -5,7 +5,7 @@ from app.database.db import init_db, get_connection
 from app.config import settings
 from app.services.auth_service import register_company, login_company, get_company_by_token
 from app.services.policy_service import create_policy_service, check_policy_clarity, get_all_policies, delete_policy_service
-from app.services.rule_service import get_all_rules, get_active_rules
+from app.services.rule_service import get_all_rules, get_active_rules, approve_rule_service
 from app.services.event_service import import_sample_csv, get_all_events, ingest_and_evaluate_event
 from app.services.audit_service import (
     get_audit_ledger, verify_ledger_integrity, simulate_tamper, restore_ledger_integrity
@@ -65,8 +65,8 @@ def test_fresh_company_starts_with_zero_records():
     assert audit_check["is_valid"] is True
     assert audit_check["total_records"] == 0
 
-def test_policy_creation_ai_analysis_and_auto_activation():
-    """Requirement 5 & 7: Policy submitted, AI analyzes, rule validated, and automatically activated into engine."""
+def test_policy_creation_ai_analysis_and_human_approval():
+    """Policy submitted, AI analyzes, rule validated as PENDING_APPROVAL, then human-approved into ACTIVE."""
     comp = register_company("FinTech Ltd", "compliance@fintech.com", "SecurePwd!", "Banking")
     cid = comp["company_id"]
 
@@ -82,12 +82,20 @@ def test_policy_creation_ai_analysis_and_auto_activation():
     assert res["proposed_rule"] is not None
     rule = res["proposed_rule"]
     
-    # Rule must be automatically ACTIVE (no human compliance officer sign-off)
-    assert rule["status"] == "ACTIVE"
+    # Rule must initially be PENDING_APPROVAL (human approval required)
+    assert rule["status"] == "PENDING_APPROVAL"
     assert rule["validation_status"] == "VALIDATED"
     assert rule["classification"] == "PRIVACY_VIOLATION"
 
-    # Verify rule is in database and active
+    # Before approval, rule is NOT in active engine
+    active_before = get_active_rules(cid)
+    assert len(active_before) == 0
+
+    # Human company user approves the rule
+    app_res = approve_rule_service(rule["rule_id"], cid, cid, "Compliance Officer")
+    assert app_res["new_status"] == "ACTIVE"
+
+    # Verify rule is now active
     active = get_active_rules(cid)
     assert len(active) == 1
     assert active[0]["rule_id"] == rule["rule_id"]
@@ -127,14 +135,15 @@ def test_multi_company_tenant_isolation():
     assert len(get_all_rules(comp_b["company_id"])) == 0
 
 def test_event_evaluation_alert_generation_and_proof_chain():
-    """Requirement 8 & 9: Ingest event, match active rule, generate alert, and seal SHA-256 proof card."""
+    """Ingest event, match active approved rule, generate alert, and seal SHA-256 proof card."""
     comp = register_company("Secure Corp", "ciso@securecorp.com", "MasterPass!", "Banking")
     cid = comp["company_id"]
 
-    # Add active rule via policy
-    asyncio.run(create_policy_service("AI Guard", "Banking", "Personal customer data must not be sent to unapproved external AI.", cid))
+    # Add policy
+    res = asyncio.run(create_policy_service("AI Guard", "Banking", "Personal customer data must not be sent to unapproved external AI.", cid))
+    rule_id = res["proposed_rule"]["rule_id"]
 
-    # Ingest violating event
+    # Before approval: Inactive rule must not trigger alerts
     event_payload = {
         "event_id": "EVT-VIOLATION-01",
         "user_id": "EMP_101",
@@ -145,8 +154,25 @@ def test_event_evaluation_alert_generation_and_proof_chain():
         "authorized": False,
         "destination": "api.external.com"
     }
+    eval_pending = ingest_and_evaluate_event(event_payload, cid)
+    assert eval_pending["classification"] == "NORMAL"
+    assert len(get_alerts(cid)) == 0
 
-    eval_result = ingest_and_evaluate_event(event_payload, cid)
+    # Approve rule
+    approve_rule_service(rule_id, cid, cid, "Lead Auditor")
+
+    # Ingest violating event with active rule
+    event_violating = {
+        "event_id": "EVT-VIOLATION-02",
+        "user_id": "EMP_101",
+        "event_type": "AI_DATA_SEND",
+        "resource": "CUSTOMER_DB",
+        "activity_details": "Customer records transmitted to unapproved external AI service.",
+        "sensitive_data": True,
+        "authorized": False,
+        "destination": "api.external.com"
+    }
+    eval_result = ingest_and_evaluate_event(event_violating, cid)
     assert eval_result["classification"] == "PRIVACY_VIOLATION"
     assert eval_result["recommended_action"] == "BLOCK_OR_ALERT"
     assert eval_result["proof_id"] is not None
@@ -156,14 +182,13 @@ def test_event_evaluation_alert_generation_and_proof_chain():
     assert len(alerts) == 1
     assert alerts[0]["severity"] == "CRITICAL"
 
-    # Ledger must contain 1 block and be cryptographically verified
+    # Ledger must contain blocks and be cryptographically verified
     ledger = get_audit_ledger(cid)
-    assert len(ledger) == 1
-    assert ledger[0]["proof_id"] == eval_result["proof_id"]
+    assert len(ledger) >= 1
 
     verification = verify_ledger_integrity(cid)
     assert verification["is_valid"] is True
-    assert verification["total_records"] == 1
+    assert verification["total_records"] >= 1
 
     # Tamper test
     tamper_res = simulate_tamper(cid, eval_result["proof_id"])

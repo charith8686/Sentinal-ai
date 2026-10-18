@@ -3,7 +3,6 @@ import uuid
 import datetime
 from typing import Dict, Any, List, Optional
 from app.database.db import get_connection
-from app.services.rule_service import get_active_rules
 
 # Supported deterministic fields and operators in the rule engine
 SUPPORTED_FIELDS = {
@@ -88,9 +87,10 @@ def validate_and_test_rule(
             "message": f"Safety execution test failed with error: {str(e)}"
         }
 
-    # Everything passed! Rule is automatically ACTIVATED
+    # Everything passed! Rule is validated and ready for human review
     return {
         "passed": True,
-        "status": "ACTIVE",
-        "message": "Automated validation and testing passed. Rule automatically activated into runtime engine."
+        "status": "VALIDATED",
+        "message": "Deterministic validation and testing passed. Rule is verified and ready for human approval."
     }
+

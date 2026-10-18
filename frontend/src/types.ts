@@ -49,7 +49,7 @@ export interface Rule {
   risk_level: string;
   explanation: string;
   version: string;
-  status: 'ACTIVE' | 'REJECTED' | 'DRAFT';
+  status: 'ACTIVE' | 'PENDING_APPROVAL' | 'REJECTED' | 'NEEDS_REVIEW' | 'DRAFT';
   approver?: string | null;
   approval_time?: string | null;
   review_comment?: string | null;
@@ -135,6 +135,7 @@ export interface DashboardOverview {
   metrics: {
     policies: number;
     active_rules: number;
+    pending_rules?: number;
     open_alerts: number;
     audit_records: number;
   };

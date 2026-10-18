@@ -98,6 +98,27 @@ export const api = {
   getRules: async (): Promise<Rule[]> => {
     return request('/rules');
   },
+  approveRule: async (ruleId: string, reviewComment?: string): Promise<any> => {
+    return request(`/rules/${ruleId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ review_comment: reviewComment })
+    });
+  },
+  rejectRule: async (ruleId: string, reviewComment?: string): Promise<any> => {
+    return request(`/rules/${ruleId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ review_comment: reviewComment })
+    });
+  },
+  updateRule: async (ruleId: string, updates: Partial<Rule>): Promise<any> => {
+    return request(`/rules/${ruleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+  },
+  getRuleHistory: async (ruleId: string): Promise<any[]> => {
+    return request(`/rules/${ruleId}/history`);
+  },
   deleteRule: async (ruleId: string): Promise<any> => {
     return request(`/rules/${ruleId}`, { method: 'DELETE' });
   },

@@ -111,6 +111,18 @@ export function App() {
     return res;
   };
 
+  const handleApproveRule = async (ruleId: string, comment?: string) => {
+    const res = await api.approveRule(ruleId, comment);
+    await loadAllData();
+    return res;
+  };
+
+  const handleRejectRule = async (ruleId: string, comment?: string) => {
+    const res = await api.rejectRule(ruleId, comment);
+    await loadAllData();
+    return res;
+  };
+
   const handleDeleteRule = async (ruleId: string) => {
     const res = await api.deleteRule(ruleId);
     await loadAllData();
@@ -233,6 +245,7 @@ export function App() {
   }
 
   const openAlertsCount = overview?.metrics?.open_alerts ?? alerts.filter((a) => a.investigation_status === 'OPEN').length;
+  const pendingRulesCount = overview?.metrics?.pending_rules ?? rules.filter((r) => r.status === 'PENDING_APPROVAL').length;
 
   return (
     <div className="app-container">
@@ -245,6 +258,7 @@ export function App() {
           setFocusedAlertId(null);
         }}
         openAlertsCount={openAlertsCount}
+        pendingRulesCount={pendingRulesCount}
         company={company}
         onLogout={handleLogout}
       />
@@ -280,6 +294,8 @@ export function App() {
           {activeTab === 'rules' && (
             <RuleRegistry
               rules={rules}
+              onApproveRule={handleApproveRule}
+              onRejectRule={handleRejectRule}
               onDeleteRule={handleDeleteRule}
               onDeleteAllRules={handleDeleteAllRules}
             />

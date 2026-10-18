@@ -153,8 +153,27 @@ def init_db():
     );
     """)
 
+    # 8. Rule History / Audit Lineage table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS rule_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        company_id TEXT NOT NULL,
+        rule_id TEXT NOT NULL,
+        version TEXT NOT NULL,
+        action TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        actor_name TEXT NOT NULL,
+        status TEXT NOT NULL,
+        validation_status TEXT,
+        validation_message TEXT,
+        comment TEXT,
+        timestamp TEXT NOT NULL,
+        rule_snapshot_json TEXT NOT NULL
+    );
+    """)
+
     # Migration helper for any existing tables missing company_id
-    for table in ["policies", "rules", "events", "alerts", "audit_ledger"]:
+    for table in ["policies", "rules", "events", "alerts", "audit_ledger", "rule_history"]:
         try:
             cursor.execute(f"ALTER TABLE {table} ADD COLUMN company_id TEXT DEFAULT 'DEFAULT_COMPANY'")
         except sqlite3.OperationalError:
@@ -169,6 +188,16 @@ def init_db():
         cursor.execute("ALTER TABLE rules ADD COLUMN validation_message TEXT")
     except sqlite3.OperationalError:
         pass
+
+    # Migration: Existing rules must not bypass the new approval requirement
+    # Transition any previously auto-activated rules to PENDING_APPROVAL
+    cursor.execute("""
+        UPDATE rules
+        SET status = 'PENDING_APPROVAL',
+            approver = NULL,
+            approval_time = NULL
+        WHERE status = 'ACTIVE' AND (approver = 'Automated Verification' OR approver IS NULL)
+    """)
 
     conn.commit()
     conn.close()

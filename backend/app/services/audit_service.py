@@ -144,11 +144,16 @@ def restore_ledger_integrity(company_id: str) -> Dict[str, Any]:
 def delete_audit_record_service(proof_id: str, company_id: str) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
+    cursor.execute("SELECT proof_id FROM audit_ledger WHERE proof_id = ? AND company_id = ?", (proof_id, company_id))
+    if not cursor.fetchone():
+        conn.close()
+        return False
     cursor.execute("DELETE FROM audit_ledger WHERE proof_id = ? AND company_id = ?", (proof_id, company_id))
-    affected = cursor.rowcount > 0
     conn.commit()
     conn.close()
-    return affected
+    # Recalculate remaining chain so deletion does not leave a broken cryptographic chain
+    restore_ledger_integrity(company_id)
+    return True
 
 def clear_audit_ledger_service(company_id: str) -> int:
     conn = get_connection()
@@ -158,4 +163,85 @@ def clear_audit_ledger_service(company_id: str) -> int:
     conn.commit()
     conn.close()
     return affected
+
+def append_audit_record(
+    company_id: str,
+    event_id: str,
+    rule_id: str = "GOVERNANCE",
+    rule_version: str = "1.0",
+    policy_id: str = "POLICY",
+    policy_version: str = "1.0",
+    cited_clause_id: str = "Internal Governance",
+    classification: str = "AUDIT_RECORD",
+    recommended_action: str = "RECORD_LOGGED",
+    approver_id: str = "System",
+    approval_time: Optional[str] = None,
+    event_timestamp: Optional[str] = None,
+    detection_timestamp: Optional[str] = None,
+    proof_id: Optional[str] = None,
+    cursor = None
+) -> Dict[str, Any]:
+    import uuid
+    import datetime
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    evt_time = event_timestamp or now_iso
+    det_time = detection_timestamp or now_iso
+    app_time = approval_time or det_time
+    pid = proof_id or f"PRF-{uuid.uuid4().hex[:6].upper()}"
+
+    close_conn = False
+    if cursor is None:
+        conn = get_connection()
+        cursor = conn.cursor()
+        close_conn = True
+    else:
+        conn = None
+
+    cursor.execute("SELECT current_hash FROM audit_ledger WHERE company_id = ? ORDER BY id DESC LIMIT 1", (company_id,))
+    last_row = cursor.fetchone()
+    prev_hash = last_row["current_hash"] if last_row else GENESIS_HASH
+
+    payload = create_proof_payload(
+        event_id=event_id,
+        event_timestamp=evt_time,
+        detection_timestamp=det_time,
+        rule_id=rule_id,
+        rule_version=rule_version,
+        policy_id=policy_id,
+        policy_version=policy_version,
+        cited_clause_id=cited_clause_id,
+        classification=classification,
+        recommended_action=recommended_action,
+        approver_id=approver_id,
+        approval_time=app_time
+    )
+    canonical_str = canonical_serialize(payload)
+    curr_hash = compute_record_hash(canonical_str, prev_hash)
+
+    cursor.execute("""
+        INSERT INTO audit_ledger (
+            company_id, proof_id, event_id, event_timestamp, detection_timestamp,
+            rule_id, rule_version, policy_id, policy_version, cited_clause_id,
+            classification, recommended_action, approver_id, approval_time,
+            previous_hash, current_hash, is_tampered
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+    """, (
+        company_id, pid, event_id, evt_time, det_time,
+        rule_id, rule_version, policy_id, policy_version, cited_clause_id,
+        classification, recommended_action, approver_id, app_time,
+        prev_hash, curr_hash
+    ))
+
+    if close_conn and conn:
+        conn.commit()
+        conn.close()
+
+    return {
+        "proof_id": pid,
+        "company_id": company_id,
+        "event_id": event_id,
+        "current_hash": curr_hash,
+        "previous_hash": prev_hash
+    }
+
 
