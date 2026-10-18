@@ -3,6 +3,7 @@ import json
 import datetime
 from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, Query, Body, Header, Depends, status, UploadFile, File
+from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -242,6 +243,23 @@ def delete_rule(rule_id: str, company: Dict[str, Any] = Depends(get_current_comp
 def list_events(company: Dict[str, Any] = Depends(get_current_company)):
     return get_all_events(company["company_id"])
 
+@app.get("/api/events/sample-csv")
+def get_sample_csv_template():
+    """
+    Returns the standard benchmark event dataset as a downloadable CSV template.
+    """
+    csv_file = os.path.join(os.path.dirname(__file__), "data", "ibm_z_sentinel_ai_sample_events.csv")
+    if os.path.exists(csv_file):
+        with open(csv_file, "r", encoding="utf-8") as f:
+            content = f.read()
+    else:
+        content = "event_id,timestamp,user_id,event_type,resource,activity_details,sensitive_data,authorized,policy_rule\n"
+    return PlainTextResponse(
+        content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=sentinel_ai_events_sample.csv"}
+    )
+
 @app.post("/api/events/import-csv")
 async def import_csv_endpoint(
     file: Optional[UploadFile] = File(None),
@@ -261,8 +279,8 @@ async def import_csv_endpoint(
 
     try:
         content_bytes = await file.read()
-        if not content_bytes:
-            raise HTTPException(status_code=400, detail="The selected CSV file is empty.")
+        if not content_bytes or len(content_bytes.strip()) == 0:
+            raise HTTPException(status_code=400, detail="The selected CSV file is empty (0 bytes).")
 
         try:
             csv_text = content_bytes.decode("utf-8-sig")
@@ -275,7 +293,9 @@ async def import_csv_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to import dataset: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Failed to process CSV dataset: {str(e)}")
 
 @app.post("/api/events/simulate")
 def simulate_event(event_in: EventIngest, company: Dict[str, Any] = Depends(get_current_company)):

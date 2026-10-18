@@ -40,24 +40,24 @@ def import_csv_data(company_id: str, csv_content: str) -> Dict[str, Any]:
     if not csv_content or not csv_content.strip():
         raise ValueError("The uploaded CSV file is empty.")
 
+    # 1. Detect delimiter automatically (, or ; or \t)
+    first_line = csv_content.strip().splitlines()[0] if csv_content.strip().splitlines() else ""
+    delimiter = ","
+    if first_line.count(";") > first_line.count(",") and first_line.count(";") > first_line.count("\t"):
+        delimiter = ";"
+    elif first_line.count("\t") > first_line.count(",") and first_line.count("\t") > first_line.count(";"):
+        delimiter = "\t"
+
     f = io.StringIO(csv_content.strip())
-    reader = csv.DictReader(f)
+    reader = csv.DictReader(f, delimiter=delimiter)
     
     if not reader.fieldnames:
-        raise ValueError("Invalid CSV format: no header row found.")
+        raise ValueError("Invalid CSV format: no header row found. Please ensure the first row contains column headers.")
 
     # Standardize fieldnames
     raw_headers = [h.strip() for h in reader.fieldnames if h]
     lower_headers = [h.lower() for h in raw_headers]
     
-    # Check if there is at least one recognizable event column
-    recognised_keys = {"event_id", "id", "activity_details", "details", "event_type", "type", "user_id", "user", "resource", "sensitive_data", "authorized"}
-    if not any(k in lower_headers for k in recognised_keys):
-        raise ValueError(
-            "Invalid CSV schema: Could not find recognized event columns. "
-            "Expected columns such as event_id, user_id, event_type, resource, activity_details, sensitive_data, authorized."
-        )
-
     rows = list(reader)
     if not rows:
         raise ValueError("CSV file contains headers but no data rows.")
@@ -83,27 +83,52 @@ def import_csv_data(company_id: str, csv_content: str) -> Dict[str, Any]:
         clean_row = {}
         for k, v in row.items():
             if k is not None:
-                clean_row[k.strip().lower()] = v.strip() if v is not None else ""
+                clean_row[k.strip().lower()] = v.strip() if isinstance(v, str) else str(v or "")
 
-        # Extract fields with fallback aliases
-        raw_event_id = clean_row.get("event_id") or clean_row.get("id") or ""
+        # Extract fields with broad aliases
+        raw_event_id = (
+            clean_row.get("event_id") or clean_row.get("id") or clean_row.get("eventid") or 
+            clean_row.get("event_number") or clean_row.get("transaction_id") or ""
+        )
         if raw_event_id:
             event_id = raw_event_id
-            # If an event_id already exists for this company, make it unique so all rows import cleanly
-            cursor.execute("SELECT 1 FROM events WHERE event_id = ? AND company_id = ?", (event_id, company_id))
+            # Guarantee global event_id uniqueness to prevent primary key collision
+            cursor.execute("SELECT 1 FROM events WHERE event_id = ?", (event_id,))
             if cursor.fetchone():
-                event_id = f"{event_id}-{uuid.uuid4().hex[:4].upper()}"
+                event_id = f"{event_id}-{uuid.uuid4().hex[:6].upper()}"
         else:
             event_id = f"EVT-{uuid.uuid4().hex[:6].upper()}"
 
-        timestamp = clean_row.get("timestamp") or clean_row.get("time") or clean_row.get("date") or now_iso
-        user_id = clean_row.get("user_id") or clean_row.get("user") or clean_row.get("actor") or "ANONYMOUS"
-        event_type = clean_row.get("event_type") or clean_row.get("type") or clean_row.get("action") or "GENERIC_ACCESS"
-        resource = clean_row.get("resource") or clean_row.get("target") or clean_row.get("asset") or "SYSTEM_RESOURCE"
-        activity_details = clean_row.get("activity_details") or clean_row.get("details") or clean_row.get("description") or clean_row.get("message") or ""
+        timestamp = (
+            clean_row.get("timestamp") or clean_row.get("time") or clean_row.get("date") or 
+            clean_row.get("datetime") or clean_row.get("created_at") or now_iso
+        )
+        user_id = (
+            clean_row.get("user_id") or clean_row.get("user") or clean_row.get("userid") or 
+            clean_row.get("username") or clean_row.get("employee_id") or clean_row.get("actor") or "SYSTEM_USER"
+        )
+        event_type = (
+            clean_row.get("event_type") or clean_row.get("type") or clean_row.get("event") or 
+            clean_row.get("action") or clean_row.get("activity_type") or clean_row.get("operation") or "GENERIC_ACCESS"
+        )
+        resource = (
+            clean_row.get("resource") or clean_row.get("target") or clean_row.get("asset") or 
+            clean_row.get("system") or clean_row.get("database") or clean_row.get("table") or "SYSTEM_RESOURCE"
+        )
+
+        activity_details = (
+            clean_row.get("activity_details") or clean_row.get("details") or clean_row.get("description") or 
+            clean_row.get("message") or clean_row.get("log") or clean_row.get("summary") or ""
+        )
+        if not activity_details:
+            # Fallback synthesize from available columns
+            activity_details = f"Activity {event_type} on {resource} by {user_id}"
 
         # Parse boolean values
-        sensitive_raw = clean_row.get("sensitive_data") or clean_row.get("is_sensitive") or clean_row.get("sensitive")
+        sensitive_raw = (
+            clean_row.get("sensitive_data") or clean_row.get("is_sensitive") or clean_row.get("sensitive") or
+            clean_row.get("pii") or clean_row.get("contains_sensitive")
+        )
         sensitive_data = bool(parse_csv_boolean(sensitive_raw))
 
         # Run DLP scanner
@@ -111,14 +136,17 @@ def import_csv_data(company_id: str, csv_content: str) -> Dict[str, Any]:
         if dlp_findings:
             sensitive_data = True
 
-        auth_raw = clean_row.get("authorized") or clean_row.get("is_authorized")
+        auth_raw = (
+            clean_row.get("authorized") or clean_row.get("is_authorized") or clean_row.get("auth") or
+            clean_row.get("permitted") or clean_row.get("approved")
+        )
         authorized = parse_csv_boolean(auth_raw)
         auth_db_val = 1 if authorized is True else (0 if authorized is False else None)
 
-        policy_rule = clean_row.get("policy_rule") or clean_row.get("rule") or ""
+        policy_rule = clean_row.get("policy_rule") or clean_row.get("rule") or clean_row.get("policy") or ""
 
         # Destination & Region
-        destination = clean_row.get("destination")
+        destination = clean_row.get("destination") or clean_row.get("endpoint") or clean_row.get("target_system")
         if not destination:
             act_lower = activity_details.lower()
             if "unapproved" in act_lower or "external" in act_lower or "ai" in act_lower:
@@ -126,11 +154,11 @@ def import_csv_data(company_id: str, csv_content: str) -> Dict[str, Any]:
             else:
                 destination = "INTERNAL_LINUX_SERVER"
 
-        region = clean_row.get("region") or "EU"
+        region = clean_row.get("region") or clean_row.get("location") or clean_row.get("country") or "EU"
 
-        expected_classification = clean_row.get("expected_classification") or ""
-        expected_action = clean_row.get("expected_action") or ""
-        expected_reason = clean_row.get("expected_reason") or ""
+        expected_classification = clean_row.get("expected_classification") or clean_row.get("classification") or ""
+        expected_action = clean_row.get("expected_action") or clean_row.get("action_recommended") or ""
+        expected_reason = clean_row.get("expected_reason") or clean_row.get("reason") or ""
 
         # Persist event with company isolation
         cursor.execute("""
@@ -165,6 +193,10 @@ def import_csv_data(company_id: str, csv_content: str) -> Dict[str, Any]:
 
         # Generate Proof Card & Append to Company SHA-256 Ledger
         proof_id = f"PRF-{uuid.uuid4().hex[:8].upper()}"
+        cursor.execute("SELECT 1 FROM audit_ledger WHERE proof_id = ?", (proof_id,))
+        if cursor.fetchone():
+            proof_id = f"PRF-{uuid.uuid4().hex[:12].upper()}"
+
         rule_id_str = eval_result.get("matched_rule_id") or "BASELINE_DEFAULT"
         rule_ver_str = "1.0"
         policy_id_str = eval_result.get("source_policy_id") or "BASELINE_POLICY"
@@ -216,6 +248,10 @@ def import_csv_data(company_id: str, csv_content: str) -> Dict[str, Any]:
         # If violation or suspicious, generate Alert record
         if eval_result.get("classification") in ["PRIVACY_VIOLATION", "SUSPICIOUS"]:
             alert_id = f"ALT-{uuid.uuid4().hex[:6].upper()}"
+            cursor.execute("SELECT 1 FROM alerts WHERE alert_id = ?", (alert_id,))
+            if cursor.fetchone():
+                alert_id = f"ALT-{uuid.uuid4().hex[:10].upper()}"
+
             severity = "CRITICAL" if eval_result["classification"] == "PRIVACY_VIOLATION" else "MEDIUM"
             explanation = (
                 f"Event matched rule '{eval_result.get('matched_rule_name', rule_id_str)}'. "

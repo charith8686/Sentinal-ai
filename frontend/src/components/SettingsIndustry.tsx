@@ -91,6 +91,32 @@ export const SettingsIndustry: React.FC<SettingsIndustryProps> = ({
     }
   };
 
+  const handleLoadSampleBenchmark = async () => {
+    setImporting(true);
+    setImportError(null);
+    setImportStatus(null);
+    setSelectedFileName('ibm_z_sentinel_ai_sample_events.csv');
+    try {
+      const resp = await fetch('/api/events/sample-csv');
+      const text = await resp.text();
+      const file = new File([text], 'ibm_z_sentinel_ai_sample_events.csv', { type: 'text/csv' });
+      const res = await onImportCsv(file);
+      setImportStatus(
+        res.message ||
+        `Successfully imported ${res.imported_count} benchmark events (${res.alerts_created || 0} alerts generated, ${res.audit_records_created || res.imported_count} audit records sealed).`
+      );
+      setTimeout(() => setImportStatus(null), 9000);
+    } catch (err: any) {
+      setImportError(err.message || 'Failed to load benchmark dataset.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDownloadSample = () => {
+    window.open('/api/events/sample-csv', '_blank');
+  };
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
@@ -200,24 +226,52 @@ export const SettingsIndustry: React.FC<SettingsIndustryProps> = ({
           <h3 style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, color: '#11212D' }}>
             <FileSpreadsheet size={16} color="#253745" /> Import Dataset
           </h3>
-          <span style={{ fontSize: 12, color: '#6B7B83' }}>Company-Isolated CSV Evaluation</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={handleDownloadSample}
+              title="Download standard CSV template formatted for Sentinel AI"
+            >
+              <FileSpreadsheet size={13} /> Download Sample CSV
+            </button>
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={handleLoadSampleBenchmark}
+              disabled={importing}
+              title="Quick-load the 15-event standard benchmark directly into this company workspace"
+            >
+              Load Benchmark Dataset
+            </button>
+          </div>
         </div>
 
-        <p style={{ fontSize: 13, color: '#253745', marginBottom: 12 }}>
-          Select a CSV dataset containing access logs or system events to evaluate against your company's active compliance rules.
+        <p style={{ fontSize: 13, color: '#253745', marginBottom: 14 }}>
+          Upload a CSV file containing access logs or system events to evaluate against your company's active compliance rules.
           Events are parsed, evaluated deterministically, flagged for alerts when non-compliant, and cryptographically sealed into your company's SHA-256 audit ledger.
         </p>
 
+        {/* Format Explanation Box */}
         <div style={{
           backgroundColor: '#FAFBFB',
           border: '1px solid #E2E6E7',
           borderRadius: 6,
-          padding: '12px 14px',
-          marginBottom: 16,
-          fontSize: 12,
-          color: '#4A5C6A'
+          padding: '14px 16px',
+          marginBottom: 16
         }}>
-          <strong>Supported Columns:</strong> <code>event_id</code>, <code>timestamp</code>, <code>user_id</code>, <code>event_type</code>, <code>resource</code>, <code>activity_details</code>, <code>sensitive_data</code>, <code>authorized</code>, <code>policy_rule</code>, <code>destination</code>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#11212D', marginBottom: 6 }}>
+            Expected CSV Format &amp; Column Headers:
+          </div>
+          <div style={{ fontSize: 12, color: '#4A5C6A', lineHeight: 1.6 }}>
+            <div>• <code>event_id</code> (Optional): Unique event identifier (e.g. <code>E001</code>, <code>EVT-102</code>). Auto-generated if omitted.</div>
+            <div>• <code>timestamp</code> (Optional): ISO 8601 date-time (e.g. <code>2026-10-18T10:15:00</code>). Defaults to now if omitted.</div>
+            <div>• <code>user_id</code>: Username or employee identifier (e.g. <code>EMP102</code>, <code>ADMIN01</code>).</div>
+            <div>• <code>event_type</code>: Action code (e.g. <code>READ_RECORD</code>, <code>AI_DATA_SEND</code>, <code>DATA_EXPORT</code>, <code>LOGIN</code>).</div>
+            <div>• <code>resource</code>: Target database, server, or asset (e.g. <code>CUSTOMER_DB</code>, <code>PAYROLL_DB</code>, <code>IBM_Z_MAINFRAME</code>).</div>
+            <div>• <code>activity_details</code>: Natural language description of what occurred (e.g. <em>"Employee uploads 100 customer account records to external AI tool"</em>). DLP scans this text for sensitive data.</div>
+            <div>• <code>sensitive_data</code>: <code>True</code> or <code>False</code> (or <code>1</code>/<code>0</code>). Automatically verified via regex DLP.</div>
+            <div>• <code>authorized</code>: <code>True</code>, <code>False</code>, or empty/unknown.</div>
+            <div>• <code>destination</code> (Optional): Destination host (e.g. <code>EXTERNAL_AI_ENDPOINT</code>, <code>INTERNAL_LINUX_SERVER</code>).</div>
+          </div>
         </div>
 
         {importing && (
@@ -257,7 +311,7 @@ export const SettingsIndustry: React.FC<SettingsIndustryProps> = ({
             <Upload size={14} /> {importing ? 'Importing Dataset...' : 'Import Dataset'}
           </button>
           <span style={{ fontSize: 12, color: '#6B7B83' }}>
-            Click to choose a .csv file from your computer
+            Supports comma (,), semicolon (;), and tab-separated CSV files.
           </span>
         </div>
       </div>
