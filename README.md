@@ -32,25 +32,6 @@ Enterprise teams need to turn complex policies into controls that can be tested,
 - SHA-256 hash-chained audit records, integrity verification, and tamper-detection controls
 - Shared AI-model connectivity with a disclosed local/fallback mode when model configuration is unavailable
 
-## Product walkthrough
-
-### 1. Settings & environment
-Configure shared IBM watsonx.ai connectivity, review deployment details, and import sample or benchmark datasets for compliance testing.
-
-![Sentinel AI settings and model connectivity](assets/settings-model-connectivity.jpg)
-
-![Dataset import and LinuxONE deployment details](assets/settings-dataset-deployment.jpg)
-
-### 2. Events & alerts
-Review detected violations, severity, cited rules, and case status. Inspect cases to support incident triage.
-
-![Sentinel AI events and alerts](assets/events-alerts.jpg)
-
-### 3. Audit ledger & cryptographic proof
-Inspect proof cards and classifications, verify the hash chain, and test whether tampering is detected.
-
-![Sentinel AI audit ledger and cryptographic proof](assets/audit-ledger-proof.jpg)
-
 ## IBM Z / LinuxONE deployment
 
 The backend is designed for Python 3.11+ and Linux on Z (`s390x`), with an Ubuntu-compatible development path. A multi-architecture Docker image is intended to support both `s390x` and `amd64`.
